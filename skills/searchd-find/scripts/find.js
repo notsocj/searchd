@@ -14,16 +14,24 @@
 //   node find.js check [--status tracked|idea|all] [--keywords "a,b"] [--countries "us,de"]
 //       Searches the App Store for each keyword × country and saves the results.
 //
-//   node find.js summary [--status tracked|idea|all]
-//       A compact table of the latest results, best opportunities first.
+//   node find.js summary [--status tracked|idea|all] [--limit 25]
+//       A compact table of the latest results, best opportunities first (top 25 by default,
+//       so a big keyword list doesn't flood the agent's context).
 
 import { parseArgs } from "node:util";
 import { readJson, writeJson, readStdinJson, requireApp, entryKey, flag, isMain } from "./lib/store.js";
 import { createClient } from "./lib/itunes.js";
-import { loadKeywords, planChecks, runChecks } from "./lib/checks.js";
-import { isSweetSpot } from "./lib/score.js";
+import { loadKeywords, planChecks, runChecks, pickCountries } from "./lib/checks.js";
+import { isSweetSpot, normalize } from "./lib/score.js";
 
 const STATUSES = ["tracked", "idea"];
+
+/**
+ * Clean a keyword or phrase the same way the scorer reads app names: lowercase, punctuation and
+ * symbols (emoji, ™, |…) turned into spaces. Then the phrase we SEARCH is exactly the phrase we
+ * SCORE: "🍅 focus" would otherwise be searched with the emoji but scored as just "focus".
+ */
+const clean = (text) => (typeof text === "string" ? normalize(text) : "");
 
 /**
  * Merge the agent's keyword list into keywords.json. The input comes from the agent (and
@@ -37,9 +45,9 @@ export function mergeKeywords(existing, input, countries) {
 
   for (const [i, item] of input.entries()) {
     const where = `item ${i + 1}`;
-    const keyword = typeof item?.keyword === "string" ? item.keyword.trim().toLowerCase() : "";
+    const keyword = clean(item?.keyword);
     if (!keyword || keyword.length > 100) {
-      problems.push(`${where}: "keyword" must be a non-empty string under 100 characters`);
+      problems.push(`${where}: "keyword" must be words (not only symbols), under 100 characters`);
       continue;
     }
     const index = keywords.findIndex((k) => k.keyword === keyword);
@@ -54,9 +62,8 @@ export function mergeKeywords(existing, input, countries) {
     const local = {};
     for (const [country, phrase] of Object.entries(item.local ?? {})) {
       if (!countries.includes(country)) problems.push(`${where} (${keyword}): "${country}" isn't one of your countries (${countries.join(", ")})`);
-      else if (typeof phrase !== "string" || !phrase.trim() || phrase.length > 100) problems.push(`${where} (${keyword}): local phrase for ${country} must be a short string`);
-      // Apple's search is case-insensitive; lowercase keeps phrases (and cache keys) consistent.
-      else local[country] = phrase.trim().toLowerCase();
+      else if (!clean(phrase) || phrase.length > 100) problems.push(`${where} (${keyword}): local phrase for ${country} must be words (not only symbols), under 100 characters`);
+      else local[country] = clean(phrase);
     }
     if (index === -1) {
       keywords.push({ keyword, local, status: item.status ?? "idea", source: item.status === "tracked" ? "manual" : "brainstorm", addedAt: new Date().toISOString() });
@@ -68,9 +75,18 @@ export function mergeKeywords(existing, input, countries) {
   return { keywords, problems };
 }
 
-/** Keywords matching --status (and --keywords, if given). */
+/** Keywords matching --status (and --keywords, if given). Unknown values stop with a message. */
 function selectKeywords(all, status, names) {
-  const wanted = names ? names.split(",").map((n) => n.trim().toLowerCase()) : null;
+  if (status !== "all" && !STATUSES.includes(status)) {
+    console.error(`find.js: --status must be tracked, idea, or all (got "${status}").`);
+    process.exit(1);
+  }
+  const wanted = names ? names.split(",").map(clean) : null;
+  const unknown = (wanted ?? []).filter((n) => !all.some((k) => k.keyword === n));
+  if (unknown.length) {
+    console.error(`find.js: not a saved keyword: ${unknown.join(", ")}. Add it first with \`find.js keywords\`.`);
+    process.exit(1);
+  }
   return all.filter((k) => (status === "all" || k.status === status) && (!wanted || wanted.includes(k.keyword)));
 }
 
@@ -84,8 +100,12 @@ function status(app) {
   console.log(JSON.stringify({ app: { id: app.id, name: app.name, description: app.description ?? "" }, countries: app.countries, competitors: app.competitors, keywords }, null, 2));
 }
 
-/** One line per keyword: each country's rank / volume / difficulty, best opportunity first. */
-export function summary(app, keywords, results) {
+/**
+ * One line per keyword: each country's rank / volume / difficulty, best opportunity first.
+ * The local phrase is only shown where it differs from the keyword, which keeps lines short
+ * (English-speaking countries would otherwise repeat the same phrase five times).
+ */
+export function summary(app, keywords, results, limit = 25) {
   const rows = keywords.map((k) => {
     const cells = app.countries.map((c) => results.entries?.[entryKey(k.keyword, c)]).filter(Boolean);
     const best = Math.max(0, ...cells.map((e) => e.opportunity));
@@ -93,17 +113,19 @@ export function summary(app, keywords, results) {
   });
   rows.sort((a, b) => b.best - a.best);
   const lines = [];
-  for (const { k, cells } of rows) {
+  for (const { k, cells } of rows.slice(0, limit)) {
     if (!cells.length) {
       lines.push(`${k.keyword} [${k.status}]: not checked yet`);
       continue;
     }
     const parts = cells.map((e) => {
       const star = isSweetSpot(e.volume, e.difficulty) ? "⭐" : "";
-      return `${flag(e.country)} ${e.phrase} ${e.rank ? `#${e.rank}` : "200+"} v${e.volume} d${e.difficulty}${star}`;
+      const phrase = e.phrase === k.keyword ? "" : ` ${e.phrase}`;
+      return `${flag(e.country)}${phrase} ${e.rank ? `#${e.rank}` : "200+"} v${e.volume} d${e.difficulty}${star}`;
     });
     lines.push(`${k.keyword} [${k.status}]: ${parts.join(" | ")}`);
   }
+  if (rows.length > limit) lines.push(`… and ${rows.length - limit} more (lower opportunity). Use --limit to see more.`);
   return lines.join("\n");
 }
 
@@ -114,6 +136,7 @@ if (isMain(import.meta.url)) {
       status: { type: "string", default: "all" },
       keywords: { type: "string" },
       countries: { type: "string" },
+      limit: { type: "string", default: "25" },
     },
   });
   const app = requireApp();
@@ -130,13 +153,15 @@ if (isMain(import.meta.url)) {
     writeJson("keywords.json", keywords);
     console.log(`Saved ${keywords.length} keywords (${keywords.filter((k) => k.status === "tracked").length} tracked, ${keywords.filter((k) => k.status === "idea").length} ideas).`);
   } else if (command === "check") {
-    const countries = values.countries ? values.countries.split(",").map((c) => c.trim()) : app.countries;
+    const countries = pickCountries(app, values.countries);
     const { todo, missing } = planChecks(selectKeywords(loadKeywords(), values.status, values.keywords), countries);
     if (missing.length) console.log(`Skipped (no local phrase yet, add one with \`find.js keywords\`): ${missing.join(", ")}`);
-    const { done, failed } = await runChecks({ client: createClient(), app, todo });
-    console.log(`Done: ${done} checked${failed ? `, ${failed} failed (run again to retry them; finished ones are cached)` : ""}.`);
+    const { done, failed, stopped, locked } = await runChecks({ client: createClient(), app, todo });
+    if (locked) process.exit(1);
+    if (!stopped) console.log(`Done: ${done} checked${failed ? `, ${failed} failed (run again to retry them; finished ones are cached)` : ""}.`);
+    if (stopped) process.exit(1);
   } else if (command === "summary") {
-    console.log(summary(app, selectKeywords(loadKeywords(), values.status), readJson("results.json", { entries: {} })));
+    console.log(summary(app, selectKeywords(loadKeywords(), values.status), readJson("results.json", { entries: {} }), Number(values.limit) || 25));
   } else {
     console.error("Usage: find.js status | keywords (JSON on stdin) | check [--status …] [--keywords …] [--countries …] | summary [--status …]");
     process.exit(1);

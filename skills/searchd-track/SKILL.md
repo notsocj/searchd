@@ -15,6 +15,8 @@ allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/track.js *)
 1. Run `node ${CLAUDE_SKILL_DIR}/scripts/track.js` (add `--countries "us,de"` to check only some countries).
    - Its first line estimates the time (~3.5 s per new search, Apple's rate limit). **If it's more than ~8 minutes, run it in the background** (in Claude Code, `run_in_background`).
    - Stopping and re-running is safe: searches are cached for the day.
+   - "Stopped: the last 3 searches failed" means the user is offline or Apple is rate-limiting their network: tell them and suggest trying again in a few minutes. "Another check is already running" means wait for that one.
+   - In the background, read only the last ~15 lines of its output when it finishes.
 2. Tell the user:
    - How many keywords moved up and down since the date it names, with the biggest moves (it prints them, e.g. `🇺🇸 calorie counter: #9 → #6 (▲3)`). "200+" means not in Apple's top 200 results.
    - Any 🥇🥈🥉 top-3 ranks.

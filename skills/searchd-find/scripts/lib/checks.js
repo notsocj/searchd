@@ -4,9 +4,24 @@
 // single search we get everything: your rank, the volume and difficulty estimates, the top apps,
 // and your competitors' ranks. /searchd-find and /searchd-track both use this file.
 
-import { readJson, writeJson, today, entryKey, flag } from "./store.js";
+import { readJson, writeJson, today, entryKey, flag, acquireLock } from "./store.js";
 import { rankOf, volumeScore, difficultyScore, opportunityScore } from "./score.js";
 import { pruneCache } from "./itunes.js";
+
+/**
+ * Read a --countries flag ("us,de"). Every code must be one of the app's countries, so a typo
+ * can't silently check nothing. No flag = all the app's countries.
+ */
+export function pickCountries(app, flag) {
+  if (!flag) return app.countries;
+  const countries = flag.split(",").map((c) => c.trim().toLowerCase()).filter(Boolean);
+  const unknown = countries.filter((c) => !app.countries.includes(c));
+  if (unknown.length || !countries.length) {
+    console.error(`searchd: --countries must be from your countries (${app.countries.join(", ")}); got "${flag}". Add countries with /searchd-setup.`);
+    process.exit(1);
+  }
+  return countries;
+}
 
 /** The keywords.json list (always an array). */
 export const loadKeywords = () => readJson("keywords.json", []);
@@ -51,12 +66,29 @@ export function buildEntry({ keyword, country, phrase }, results, app) {
   };
 }
 
+// Stop the run after this many checks fail in a row: we're offline or Apple is blocking us,
+// and every further check would just fail slowly too.
+export const MAX_FAILS_IN_A_ROW = 3;
+
 /**
  * Run the checks one by one, saving after each, so a stopped run keeps its progress.
  * Prints progress lines like "12/40 · 🇩🇪 kalorienzähler → #17".
- * Returns { done, failed } counts.
+ * Returns { done, failed, stopped, locked }.
  */
 export async function runChecks({ client, app, todo, log = console.log }) {
+  const release = acquireLock();
+  if (!release) {
+    log("Another searchd check is already running in this folder. Wait for it to finish, then run this again.");
+    return { done: 0, failed: 0, stopped: false, locked: true };
+  }
+  try {
+    return await checkAll({ client, app, todo, log });
+  } finally {
+    release();
+  }
+}
+
+async function checkAll({ client, app, todo, log }) {
   pruneCache();
   const results = readJson("results.json", { entries: {} });
   const historyFile = `history/${today()}.json`;
@@ -69,6 +101,7 @@ export async function runChecks({ client, app, todo, log = console.log }) {
 
   let done = 0;
   let failed = 0;
+  let failsInARow = 0;
   for (const [i, check] of todo.entries()) {
     const label = `${i + 1}/${todo.length} · ${flag(check.country)} ${check.phrase}`;
     try {
@@ -80,12 +113,20 @@ export async function runChecks({ client, app, todo, log = console.log }) {
       writeJson("results.json", results);
       writeJson(historyFile, history);
       done++;
+      failsInARow = 0;
       log(`${label} → ${entry.rank ? `#${entry.rank}` : "200+"} · vol ${entry.volume} · diff ${entry.difficulty}`);
     } catch (error) {
       // One failed search (after retries) shouldn't throw away the rest of the run.
       failed++;
+      failsInARow++;
       log(`${label} → failed (${error.message})`);
+      if (failsInARow >= MAX_FAILS_IN_A_ROW) {
+        log(`Stopped: the last ${MAX_FAILS_IN_A_ROW} searches failed (offline, or Apple is rate-limiting this network). ${done} finished checks are saved; run again in a few minutes to continue.`);
+        return { done, failed, stopped: true, locked: false };
+      }
     }
   }
-  return { done, failed };
+  // Tell the user why a run took longer than estimated.
+  if (client.slowdowns) log(`Apple asked searchd to slow down ${client.slowdowns}× (normal on busy networks); searches ended ${(client.throttleMs / 1000).toFixed(1)} s apart.`);
+  return { done, failed, stopped: false, locked: false };
 }

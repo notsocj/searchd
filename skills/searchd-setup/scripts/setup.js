@@ -12,24 +12,31 @@
 //       with no local phrases yet: /searchd-find translates them per country).
 
 import { parseArgs } from "node:util";
-import { existsSync, readFileSync, appendFileSync } from "node:fs";
+import { existsSync, readFileSync, appendFileSync, renameSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { loadShared } from "./shared.js";
 
-const { readJson, writeJson, readStdinJson, dataDir, isMain } = await loadShared("lib/store.js");
+const { readJson, writeJson, readStdinJson, dataDir, path, today, isMain } = await loadShared("lib/store.js");
 const { createClient } = await loadShared("lib/itunes.js");
+const { normalize } = await loadShared("lib/score.js");
 
 export const DEFAULT_COUNTRIES = ["us", "gb", "ca", "au", "ph", "de", "fr", "jp", "es", "br"];
 
 /**
- * Work out what the user gave us. App Store links look like
+ * Work out what the user gave us. App Store links come in several shapes:
  *   https://apps.apple.com/us/app/cronometer-calorie-counter/id1145935738
- * so the country is the first path part and the ID follows "id".
+ *   https://apps.apple.com/app/id1145935738            (no country)
+ *   https://itunes.apple.com/us/app/id1145935738?mt=8  (old style)
+ *   itms-apps://itunes.apple.com/app/id1145935738      (opens the App Store app)
+ * In all of them the ID follows "/id", and a country, when present, is the 2 letters before "/app/".
  */
 export function parseAppInput(input) {
   const text = String(input).trim();
-  const link = text.match(/apps\.apple\.com\/([a-z]{2})\/.*?id(\d+)/i);
-  if (link) return { id: Number(link[2]), country: link[1].toLowerCase() };
+  if (/apple\.com\//i.test(text)) {
+    const id = text.match(/\/id(\d+)/i);
+    const country = text.match(/apple\.com\/([a-z]{2})\/app\//i);
+    if (id) return { id: Number(id[1]), ...(country ? { country: country[1].toLowerCase() } : {}) };
+  }
   const id = text.match(/^(?:id)?(\d{5,})$/i);
   if (id) return { id: Number(id[1]) };
   return { name: text };
@@ -83,6 +90,18 @@ async function save(input) {
     process.exit(1);
   }
 
+  // Switching to a different app? Its ranks would be mixed up with the old app's, so move the old
+  // app's data into .searchd/archive/ (nothing is deleted).
+  const previous = readJson("app.json");
+  if (previous && previous.id !== app.id) {
+    const archive = path("archive", `${previous.id}-${today()}`);
+    mkdirSync(archive, { recursive: true });
+    for (const name of ["results.json", "keywords.json", "history", "audit.json"]) {
+      if (existsSync(path(name))) renameSync(path(name), `${archive}/${name}`);
+    }
+    console.log(`Switched from ${previous.name} to ${app.name}: the old app's data was moved to ${archive}`);
+  }
+
   writeJson("app.json", {
     id: app.id,
     name: app.name,
@@ -101,8 +120,8 @@ async function save(input) {
   // Add seeds without wiping keywords a previous run already localized.
   const keywords = readJson("keywords.json", []);
   for (const seed of seeds) {
-    const keyword = seed.trim().toLowerCase();
-    if (!keywords.some((k) => k.keyword === keyword)) {
+    const keyword = normalize(seed); // same cleaning as /searchd-find (lowercase, no symbols)
+    if (keyword && !keywords.some((k) => k.keyword === keyword)) {
       keywords.push({ keyword, local: {}, status: "tracked", source: "seed", addedAt: new Date().toISOString() });
     }
   }
@@ -116,7 +135,8 @@ async function save(input) {
     ignored = true;
   }
 
-  console.log(`Saved ${app.name} (${app.id}), ${countries.length} countries, ${keywords.length} keywords → ${dataDir()}`);
+  const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  console.log(`Saved ${app.name} (${app.id}), ${count(countries.length, "country", "countries")} (${countries.join(", ")}), ${count(keywords.length, "keyword", "keywords")} → ${dataDir()}`);
   if (ignored) console.log("Added .searchd/ to .gitignore.");
   const missing = competitors.filter((id) => !found.some((a) => a.id === id));
   if (missing.length) console.log(`Not found in ${countries[0].toUpperCase()}: competitor ${missing.join(", ")}`);

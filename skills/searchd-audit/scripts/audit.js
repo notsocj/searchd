@@ -2,8 +2,8 @@
 // audit.js — data for, and rule checks of, a rewritten App Store listing.
 //
 //   node audit.js data
-//       JSON for the agent: per country, your current App Store name there, plus the keywords
-//       with their rank / volume / difficulty / opportunity (best first).
+//       JSON for the agent: per country, your current App Store name there, plus the 20 best
+//       keywords with their rank / volume / difficulty / opportunity (best first).
 //
 //   node audit.js check <<'EOF'
 //   { "listings": [{ "locale": "en-US", "countries": ["us"], "name": "…", "subtitle": "…", "keywords": "a,b,c" }] }
@@ -27,6 +27,7 @@ const { createClient } = await loadShared("lib/itunes.js");
 const { normalize, hasPhrase } = await loadShared("lib/score.js");
 
 export const LIMITS = { name: 30, subtitle: 30, keywords: 100 };
+const TOP_KEYWORDS = 20;
 
 // Count characters the way people do: "ä" or an emoji is 1, even though JavaScript's .length
 // would count some of them as 2 (UTF-16 code units).
@@ -76,7 +77,10 @@ async function data(app) {
         .map((k) => entries[entryKey(k.keyword, country)])
         .filter(Boolean)
         .map(({ keyword, phrase, rank, volume, difficulty, opportunity }) => ({ keyword, phrase, rank, volume, difficulty, opportunity }))
-        .sort((a, b) => b.opportunity - a.opportunity),
+        .sort((a, b) => b.opportunity - a.opportunity)
+        // The best 20 are plenty for 160 characters of listing, and keep the output small enough
+        // for the agent to read in full (all of 60 keywords × 10 countries would be ~130 KB).
+        .slice(0, TOP_KEYWORDS),
     };
   }
   console.log(JSON.stringify({ app: { id: app.id, name: app.name }, countries }, null, 2));

@@ -3,7 +3,7 @@
 
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "../skills/searchd-find/scripts/lib/itunes.js";
@@ -63,4 +63,41 @@ test("lookup sends several IDs in one call", async () => {
   const apps = await client.lookup([1, 2], "us");
   assert.equal(apps.length, 2);
   assert.match(url, /id=1%2C2/);
+});
+
+test("a 403 makes the throttle 1.5× slower for the rest of the run", async () => {
+  const answers = [json({}, 403), json({ results: [] })];
+  const client = createClient({ fetchImpl: async () => answers.shift(), throttleMs: 1000, sleep: async () => {} });
+  await client.search("notes", "us");
+  assert.equal(client.throttleMs, 1500);
+});
+
+test("network errors (offline) get one retry, not three", async () => {
+  const client = fast(async () => {
+    throw new Error("ENOTFOUND");
+  });
+  await assert.rejects(client.search("notes", "us"), { message: "iTunes API: network error" });
+  assert.equal(client.calls, 2);
+});
+
+test("a damaged cache file is fetched again instead of crashing", async () => {
+  const client = fast(async () => json({ results: [{ trackId: 1, trackName: "A" }] }));
+  await client.search("notes", "us");
+  const dir = join(process.env.SEARCHD_DIR, "cache");
+  const day = readdirSync(dir)[0];
+  const file = join(dir, day, "us", readdirSync(join(dir, day, "us"))[0]);
+  writeFileSync(file, "{broken");
+  assert.equal((await client.search("notes", "us"))[0].id, 1);
+});
+
+test("after a slow-down, 20 clean calls in a row speed the throttle back up (never below the start)", async () => {
+  const answers = [json({}, 403), ...Array.from({ length: 60 }, () => json({ results: [] }))];
+  const client = createClient({ fetchImpl: async () => answers.shift(), throttleMs: 1000, sleep: async () => {} });
+  await client.search("t0", "us"); // 403, then success: gap 1500
+  assert.equal(client.throttleMs, 1500);
+  assert.equal(client.slowdowns, 1);
+  for (let i = 1; i <= 19; i++) await client.search(`t${i}`, "us"); // 20 clean calls
+  assert.equal(client.throttleMs, 1200);
+  for (let i = 20; i <= 39; i++) await client.search(`t${i}`, "us");
+  assert.equal(client.throttleMs, 1000, "back to the start gap, not below");
 });

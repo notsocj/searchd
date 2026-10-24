@@ -32,7 +32,7 @@ node ${CLAUDE_SKILL_DIR}/scripts/setup.js save <<'EOF'
 EOF
 ```
 
-   If it lists problems, fix them and run it again. Running setup again later updates the app and countries and adds new seeds; keywords and results already saved are kept.
+   If it lists problems, fix them and run it again. Running setup again later updates the countries and competitors and adds new seeds; keywords and results already saved are kept. If the user switches to a **different app**, the old app's keywords, results, and history are moved to `.searchd/archive/` (it prints where), so the two apps' data never mix.
 6. **Tell the user** what was saved (app, countries, seeds, competitors), that their data lives in `.searchd/` in this folder (added to `.gitignore` if there is one), and that the next step is **/searchd-find**: it translates the keywords per country, brainstorms more, and checks rank, volume, and difficulty.
 
 In Codex the commands are `$searchd-setup`, `$searchd-find`, and so on.

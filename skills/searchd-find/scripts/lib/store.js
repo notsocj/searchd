@@ -14,7 +14,7 @@
 //
 // Set SEARCHD_DIR to use a different folder (the tests do this).
 
-import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, realpathSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, realpathSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -35,8 +35,9 @@ export function readJson(name, fallback = null) {
   try {
     return JSON.parse(readFileSync(file, "utf8"));
   } catch {
-    // A half-written or hand-edited file shouldn't crash with a stack trace.
-    throw new Error(`searchd: ${file} isn't valid JSON. Fix or delete it, then try again.`);
+    // A hand-edited file shouldn't end in a stack trace: say which file, and stop.
+    console.error(`searchd: ${file} isn't valid JSON. Fix or delete it, then try again.`);
+    process.exit(1);
   }
 }
 
@@ -97,4 +98,52 @@ export async function readStdinJson() {
  */
 export function isMain(importMetaUrl) {
   return Boolean(process.argv[1]) && importMetaUrl === pathToFileURL(realpathSync(process.argv[1])).href;
+}
+
+/**
+ * Make sure only one check runs at a time in this folder. Two runs at once would both rewrite
+ * results.json from their own copy, so one run's results would be lost, and together they'd
+ * break Apple's rate limit anyway. The lock is a file holding the running process's ID; if that
+ * process is gone (crashed, killed), the lock is stale and we take it over.
+ * Returns a release() function, or null if another live run holds the lock.
+ */
+export function acquireLock() {
+  const file = path("run.lock");
+  mkdirSync(dataDir(), { recursive: true });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      writeFileSync(file, String(process.pid), { flag: "wx" }); // "wx" fails if the file exists
+      const release = () => rmSync(file, { force: true });
+      process.once("exit", release); // also freed if the run crashes
+      catchSignalsOnce();
+      return () => {
+        process.off("exit", release);
+        release();
+      };
+    } catch {
+      const pid = Number(readFileSync(file, "utf8"));
+      if (pid && pid !== process.pid && isAlive(pid)) return null;
+      rmSync(file, { force: true }); // stale: its process is gone
+    }
+  }
+  return null;
+}
+
+// Ctrl+C normally ends Node without running "exit" handlers. Exiting explicitly runs them,
+// so the lock file is removed. (130/143 are the usual exit codes for SIGINT/SIGTERM.)
+let signalsCaught = false;
+function catchSignalsOnce() {
+  if (signalsCaught) return;
+  signalsCaught = true;
+  process.once("SIGINT", () => process.exit(130));
+  process.once("SIGTERM", () => process.exit(143));
+}
+
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0); // signal 0 checks the process exists without touching it
+    return true;
+  } catch (error) {
+    return error.code === "EPERM"; // exists, but owned by someone else
+  }
 }

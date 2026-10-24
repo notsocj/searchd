@@ -244,14 +244,22 @@ function rankPill(rank) {
 }
 
 /**
- * Rank change since the previous day this keyword was checked. History files hold
- * { date, ranks: { "keyword|cc": rank } }; null means 200+, which we count as 201.
+ * The days a keyword was checked, oldest first: [{ date, rank }], rank null = 200+.
+ * D.history is { dates: [...], ranks: { "keyword|cc": [one value per date] } }, where a value
+ * is the rank, 0 for 200+, or null when it wasn't checked that day.
  */
+function points(k) {
+  return (D.history.ranks[k] || [])
+    .map((rank, i) => ({ date: D.history.dates[i], rank: rank === 0 ? null : rank, checked: rank !== null }))
+    .filter((p) => p.checked);
+}
+
+/** Rank change since the previous day this keyword was checked. 200+ counts as 201. */
 function delta(k) {
-  const days = D.history.filter((h) => k in h.ranks);
+  const days = points(k);
   if (days.length < 2) return null;
-  const before = days[days.length - 2].ranks[k] ?? 201;
-  const now = days[days.length - 1].ranks[k] ?? 201;
+  const before = days[days.length - 2].rank ?? 201;
+  const now = days[days.length - 1].rank ?? 201;
   const change = before - now;
   if (!change) return null;
   return el("span", { class: "delta " + (change > 0 ? "up" : "down"), text: (change > 0 ? "▲" : "▼") + Math.abs(change), title: "since " + days[days.length - 2].date });
@@ -290,7 +298,7 @@ const TABS = [
   { id: "keywords", label: "Keywords", count: () => tracked.length, render: () => keywordTable(tracked, "rank"), countries: true },
   { id: "competitors", label: "Competitors", count: () => D.losingTo.length, render: competitors, countries: true },
   { id: "ideas", label: "Ideas", count: () => ideas.length, render: () => keywordTable(ideas, "opportunity"), countries: true },
-  { id: "history", label: "History", count: () => D.history.length, render: history, countries: true },
+  { id: "history", label: "History", count: () => D.history.dates.length, render: history, countries: true },
 ];
 
 function render() {
@@ -373,7 +381,7 @@ function keywordTable(list, sortBy) {
       el("td", {}, scoreBar(e.volume)),
       el("td", {}, scoreBar(e.difficulty, true)),
       el("td", { class: "num", text: String(e.opportunity) }),
-      el("td", {}, el("div", { class: "icons" }, e.top.slice(0, 5).map((a) => appIcon(a, a.id === D.app.id ? "me" : "")))),
+      el("td", {}, el("div", { class: "icons" }, e.top.map((id) => appIcon(D.apps[id] || {}, id === D.app.id ? "me" : "")))),
     ]);
   });
   const hint = el("p", { class: "hint", text: "Volume is a demand estimate from how many top-50 apps target the phrase, not a real search count. Difficulty comes from the top 10 apps' rating counts." });
@@ -459,17 +467,17 @@ function rankChart(points) {
 function history() {
   const cc = state.country;
   const charts = tracked.map((k) => {
-    const points = D.history.filter((h) => key(k.keyword, cc) in h.ranks).map((h) => ({ date: h.date, rank: h.ranks[key(k.keyword, cc)] }));
-    if (!points.length) return null;
+    const series = points(key(k.keyword, cc));
+    if (!series.length) return null;
     const e = entry(k.keyword, cc);
     return el("div", { class: "panel chart" }, [
-      el("div", { class: "title" }, [el("span", { class: "kw", text: e ? e.phrase : k.keyword, title: k.keyword }), rankPill(points[points.length - 1].rank)]),
-      rankChart(points),
+      el("div", { class: "title" }, [el("span", { class: "kw", text: e ? e.phrase : k.keyword, title: k.keyword }), rankPill(series[series.length - 1].rank)]),
+      rankChart(series),
     ]);
   }).filter(Boolean);
   if (!charts.length) return empty("No history in " + flag(cc) + " " + cc.toUpperCase() + " yet. Run /searchd-track once a day to build it.");
   const parts = [el("div", { class: "charts" }, charts)];
-  if (D.history.length < 2) parts.push(el("p", { class: "hint", text: "One day of history so far. Run /searchd-track daily (and after listing changes) to see the trend." }));
+  if (D.history.dates.length < 2) parts.push(el("p", { class: "hint", text: "One day of history so far. Run /searchd-track daily (and after listing changes) to see the trend." }));
   return el("div", {}, parts);
 }
 

@@ -30,10 +30,9 @@ export function losingTo(entries, myId, limit = 20) {
     entry.top.forEach((app, i) => {
       const position = i + 1;
       if (app.id === myId || (entry.rank && entry.rank < position)) return;
-      const row = apps.get(app.id) ?? { id: app.id, name: app.name, icon: safeIcon(app.icon), ratings: app.ratings, beats: 0, positions: 0, phrases: [] };
+      const row = apps.get(app.id) ?? { id: app.id, name: app.name, icon: safeIcon(app.icon), ratings: app.ratings, beats: 0, positions: 0 };
       row.beats++;
       row.positions += position;
-      row.phrases.push(`${entry.country}:${entry.phrase}`);
       apps.set(app.id, row);
     });
   }
@@ -43,22 +42,57 @@ export function losingTo(entries, myId, limit = 20) {
     .slice(0, limit);
 }
 
-/** Everything the page needs, with descriptions dropped and icon URLs checked. */
+/**
+ * Everything the page needs, kept small:
+ * - Only results for keywords and countries you still have. A keyword you removed (or a country
+ *   you dropped in setup) keeps old results in results.json; they shouldn't count anymore.
+ * - Each app's name, icon and ratings are stored ONCE in `apps`, and each check's top 10 is just
+ *   a list of IDs. The same big apps show up in almost every search, so repeating their details
+ *   (icon URLs are ~190 characters) made a 1,200-check dashboard about 4.8 MB.
+ */
 export function buildData(app, keywords, results, history) {
+  const current = new Map(keywords.flatMap((k) => app.countries.map((c) => [`${k.keyword}|${c}`, true])));
+  // Apps have a different name in each country's store. Going through your first (main) country
+  // first means each app is named the way it is there, not e.g. by its Brazilian name.
+  const order = (key) => app.countries.indexOf(key.slice(key.lastIndexOf("|") + 1));
+  const kept = Object.entries(results.entries ?? {})
+    .filter(([key]) => current.has(key))
+    .sort(([a], [b]) => order(a) - order(b));
+  const apps = {};
   const entries = {};
-  for (const [key, e] of Object.entries(results.entries ?? {})) {
-    entries[key] = { ...e, top: e.top.map((t) => ({ ...t, icon: safeIcon(t.icon) })) };
+  for (const [key, e] of kept) {
+    for (const t of e.top) apps[t.id] ??= { name: t.name, icon: safeIcon(t.icon), ratings: t.ratings };
+    const { keyword, country, phrase, rank, volume, difficulty, opportunity, competitors } = e;
+    entries[key] = { keyword, country, phrase, rank, volume, difficulty, opportunity, competitors, top: e.top.slice(0, 5).map((t) => t.id) };
   }
   return {
     app: { id: app.id, name: app.name, icon: safeIcon(app.icon), countries: app.countries, competitors: (app.competitors ?? []).map((c) => ({ ...c, icon: safeIcon(c.icon) })) },
     keywords: keywords.map(({ keyword, status, local }) => ({ keyword, status, local })),
     entries,
-    history,
-    losingTo: losingTo(entries, app.id),
+    apps,
+    history: packHistory(history, current),
+    losingTo: losingTo(Object.fromEntries(kept), app.id),
     sweetSpot: SWEET_SPOT,
     updatedAt: results.updatedAt ?? null,
     generatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Turn the daily files ({ date, ranks: { key: rank } }, which repeat every keyword name every day)
+ * into one array per keyword, lined up with `dates`. In each array: a number is the rank,
+ * 0 means 200+ (checked, not found), and null means not checked that day.
+ */
+export function packHistory(days, current) {
+  const ranks = {};
+  days.forEach((day, i) => {
+    for (const [key, rank] of Object.entries(day.ranks)) {
+      if (!current.has(key)) continue;
+      ranks[key] ??= Array(days.length).fill(null);
+      ranks[key][i] = rank ?? 0;
+    }
+  });
+  return { dates: days.map((d) => d.date), ranks };
 }
 
 /**

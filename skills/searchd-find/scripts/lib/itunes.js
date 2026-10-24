@@ -6,7 +6,11 @@
 // Three things make it polite and cheap:
 //   1. A throttle: Apple allows roughly 20 calls a minute, so we wait ~3.5 s between calls.
 //   2. Retries with backoff: when Apple says "slow down" (HTTP 403/429) or has a hiccup (5xx),
-//      we wait longer each time (10 s, 30 s, 60 s) before trying again.
+//      we wait longer each time (10 s, 30 s, 60 s) before trying again. A "slow down" also makes
+//      the throttle 1.5× slower (up to 10 s), so we stop hitting the limit; after 20 calls in a
+//      row go through, it speeds back up step by step. (Without that recovery, one 403 at the
+//      start of a run made the WHOLE run 50% slower in testing.)
+//      Network errors (offline, DNS) get only one retry: waiting minutes won't bring Wi-Fi back.
 //   3. A cache keyed by (term, country, date): the same search is never repeated on the same
 //      day. That also makes long runs resumable: re-run after a stop and finished checks are free.
 
@@ -46,7 +50,7 @@ const sleepFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /**
  * Make a client. Options exist so tests can run instantly with a fake fetch:
  *   fetchImpl   - defaults to Node's built-in fetch
- *   throttleMs  - minimum gap between two network calls (default 3500)
+ *   throttleMs  - starting gap between two network calls (default 3500)
  *   retryDelays - how long to wait before each retry (default 10 s, 30 s, 60 s)
  *   sleep       - how to wait (tests pass a no-op)
  */
@@ -58,10 +62,13 @@ export function createClient({
 } = {}) {
   let lastCall = 0;
   let calls = 0; // network calls actually made (cache hits don't count)
+  let gap = throttleMs; // current gap; grows when Apple tells us to slow down
+  let okStreak = 0; // calls in a row that went through since the last slow-down
+  let slowdowns = 0; // how many times Apple said "slow down" (reported at the end of a run)
 
-  /** Wait until at least `throttleMs` has passed since the previous network call. */
+  /** Wait until at least `gap` ms have passed since the previous network call. */
   async function throttle() {
-    const wait = lastCall + throttleMs - Date.now();
+    const wait = lastCall + gap - Date.now();
     if (wait > 0) await sleep(wait);
     lastCall = Date.now();
   }
@@ -74,14 +81,28 @@ export function createClient({
       let status;
       try {
         const res = await fetchImpl(url, { signal: AbortSignal.timeout(20_000) });
-        if (res.ok) return await res.json();
+        if (res.ok) {
+          // A long clean streak means we're under the limit again: step back toward the start gap.
+          if (++okStreak >= 20 && gap > throttleMs) {
+            gap = Math.max(throttleMs, Math.round(gap / 1.25));
+            okStreak = 0;
+          }
+          return await res.json();
+        }
         status = res.status;
       } catch {
         status = "network error"; // offline, DNS failure, timeout…
       }
       // 403 is what Apple actually sends when you go over the rate limit, so it's retryable here.
-      const retryable = status === "network error" || status === 403 || status === 429 || status >= 500;
-      if (!retryable || attempt >= retryDelays.length) {
+      const slowDown = status === 403 || status === 429;
+      if (slowDown) {
+        gap = Math.min(Math.round(gap * 1.5), 10_000);
+        okStreak = 0;
+        slowdowns++;
+      }
+      const retries = status === "network error" ? Math.min(1, retryDelays.length) : retryDelays.length;
+      const retryable = status === "network error" || slowDown || status >= 500;
+      if (!retryable || attempt >= retries) {
         throw new Error(`iTunes API: ${typeof status === "number" ? `HTTP ${status}` : status}`);
       }
       await sleep(retryDelays[attempt]);
@@ -92,7 +113,13 @@ export function createClient({
   async function cached(kind, key, country, fetcher) {
     const name = cacheName(kind, key, country);
     const file = path(...name);
-    if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8")).results;
+    if (existsSync(file)) {
+      try {
+        return JSON.parse(readFileSync(file, "utf8")).results;
+      } catch {
+        // A damaged cache file (e.g. the disk filled up) just means "not cached": fetch it again.
+      }
+    }
     const results = await fetcher();
     writeJson(name.join("/"), { kind, key, country, results });
     return results;
@@ -128,7 +155,12 @@ export function createClient({
     get calls() {
       return calls;
     },
-    throttleMs,
+    get throttleMs() {
+      return gap;
+    },
+    get slowdowns() {
+      return slowdowns;
+    },
   };
 }
 

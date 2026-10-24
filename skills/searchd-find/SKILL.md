@@ -28,7 +28,7 @@ Extra input from the user (may be empty): `$ARGUMENTS`
    - 🇩🇪 "calorie counter" → "kalorienzähler", 🇫🇷 → "compteur de calories", 🇪🇸 → "contador de calorías", 🇧🇷 → "contador de calorias" (Brazilian Portuguese, not Portugal's), 🇯🇵 → "カロリー計算".
    - English countries (us, gb, ca, au, ph…) usually keep the English phrase; use local spelling where people search differently (e.g. "colour" in gb/au).
    - If locals commonly search the English term (common in tech and fitness), use the English term.
-   - Lowercase. Keep the meaning: don't swap in a broader or different idea.
+   - Plain words only: no emoji or symbols (the script strips them, since nobody types them into search). Keep the meaning: don't swap in a broader or different idea.
 
 4. **Save** the ideas and translations (ideas get `"status": "idea"`; only send `local` for missing countries on existing keywords):
 
@@ -46,8 +46,11 @@ EOF
 5. **Run the checks:** `node ${CLAUDE_SKILL_DIR}/scripts/find.js check`. It prints how many checks and roughly how long they'll take, then a line per check (`12/40 · 🇩🇪 kalorienzähler → #17 · vol 75 · diff 72`).
    - Apple allows about 20 searches a minute, so each new search waits ~3.5 s. **If it estimates more than ~8 minutes, run it in the background** (in Claude Code, use `run_in_background`) and tell the user it's running. Otherwise, check fewer at once with `--keywords "a,b"` or `--countries "us,de"`.
    - It's safe to stop and re-run: finished searches are cached for the day, so a re-run only does what's left. Failed checks are listed; re-running retries them.
+   - If it says **"Stopped: the last 3 searches failed"**, the user is offline or Apple is rate-limiting their network. Don't retry right away: tell the user, and suggest running /searchd-find again in a few minutes (finished checks are kept).
+   - If it says **another check is already running**, a previous run (maybe in the background) hasn't finished. Wait for it instead of starting a second one.
+   - In the background, read only the last ~15 lines of its output when it finishes, not every progress line.
 
-6. **Summarize:** `node ${CLAUDE_SKILL_DIR}/scripts/find.js summary`. It lists every keyword, best opportunity first, with each country's rank (`#6`, or `200+` = not in the top 200), volume `v`, difficulty `d`, and ⭐ for sweet spots (volume ≥ 20 and difficulty ≤ 55).
+6. **Summarize:** `node ${CLAUDE_SKILL_DIR}/scripts/find.js summary`. It lists the top 25 keywords (add `--limit 50` for more), best opportunity first, with each country's rank (`#6`, or `200+` = not in the top 200), volume `v`, difficulty `d`, and ⭐ for sweet spots (volume ≥ 20 and difficulty ≤ 55).
 
 7. **Tell the user**, short and concrete:
    - Their best current ranks (🥇🥈🥉 for 1–3).

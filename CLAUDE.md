@@ -20,7 +20,10 @@ rank history, with a self-contained HTML dashboard. Sibling project: marKit (out
 
 ## Conventions
 - Plain JavaScript ES modules, heavily commented for people learning: every file starts with what it does, and the *why* of every non-obvious line (especially the scoring) is explained.
-- All API calls go through `createClient()` in `lib/itunes.js` (throttle ~3.5 s, retries on 403/429/5xx with 10/30/60 s backoff, daily cache). Errors say only `iTunes API: HTTP <status>`.
+- All API calls go through `createClient()` in `lib/itunes.js` (throttle ~3.5 s that grows 1.5× after a 403/429, retries on 403/429/5xx with 10/30/60 s backoff, one retry for network errors, daily cache). Errors say only `iTunes API: HTTP <status>`.
+- All checks go through `runChecks()` in `lib/checks.js`: it holds `.searchd/run.lock` (one run per folder; stale locks are taken over) and stops after `MAX_FAILS_IN_A_ROW` failures. Don't write `results.json` or history from anywhere else.
+- Keywords and local phrases are cleaned with `normalize()` from `score.js` before saving, so the phrase searched is exactly the phrase scored, and `|` (the `keyword|country` key separator) can't appear in a keyword.
+- Measure before optimizing: the throttle is the only real cost of a run (scripts add ~6 ms per check). The dashboard stores each app once (`apps`) and history as one array per keyword; keep it that way.
 - Scoring lives only in `lib/score.js` as pure functions. If you change a formula, update its comment, the README's "How the scores work", and `tests/score.test.js` together.
 - Data written by the agent (keywords, setup, listings) is validated in the script before saving; problems are listed all at once and nothing is saved.
 - Files are written atomically through `writeJson()` (temp file + rename).
