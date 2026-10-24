@@ -184,17 +184,25 @@
   h2 { font-size: 15px; font-weight: 600; margin: 28px 0 10px; }
   h2:first-child { margin-top: 0; }
 
-  /* History charts: small multiples */
-  .charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-  .chart { padding: 12px 14px 8px; }
-  .chart .title { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  /* History: summary strip, then one small rank-over-time chart per keyword */
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .stat { padding: 12px 14px; }
+  .stat b { display: block; font-size: 22px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .chart { padding: 14px 14px 12px; }
+  .chart .title { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
   .chart .title .kw { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chart svg { display: block; width: 100%; height: auto; margin-top: 6px; overflow: visible; }
-  .chart .grid { stroke: var(--line); stroke-width: 1; }
+  .chart svg { display: block; width: 100%; height: auto; margin-top: 8px; overflow: visible; }
+  .chart .grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
   .chart .axis { fill: var(--faint); font-size: 10px; font-family: inherit; }
+  .chart .area { fill: var(--accent-soft); stroke: none; }
   .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-  .chart .dot { fill: var(--accent); }
+  .chart .dot { fill: var(--accent); stroke: var(--panel); stroke-width: 1.5; }
+  .chart .halo { fill: var(--accent); opacity: 0.18; }
   .chart .gap { fill: var(--faint); }
+  .chart .foot { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+  .chart .foot b { color: var(--text); font-weight: 600; }
 
   .empty { color: var(--muted); padding: 40px 16px; text-align: center; }
   .empty code { background: var(--panel-2); padding: 2px 6px; border-radius: 6px; }
@@ -238,6 +246,8 @@
     .toolbar { flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding-inline: 16px; scrollbar-width: none; }
     .toolbar::-webkit-scrollbar { display: none; }
     .toolbar .hint { white-space: nowrap; }
+    .stats { grid-template-columns: 1fr; gap: 8px; }
+    .stat { display: flex; align-items: baseline; justify-content: space-between; }
   }
 </style>
 </head>
@@ -532,9 +542,19 @@ function rankChart(points) {
   points.forEach((p, i) => {
     if (p.rank) d += (i && points[i - 1].rank ? "L" : "M") + x(i).toFixed(1) + " " + y(p.rank).toFixed(1);
   });
+  // Soft fill under each unbroken stretch of line, down to the "200+" row.
+  const base = y(201).toFixed(1);
+  for (const run of d.split("M").filter(Boolean)) {
+    const pts = run.split("L");
+    if (pts.length < 2) continue;
+    const first = pts[0].split(" ")[0], last = pts[pts.length - 1].split(" ")[0];
+    s.append(svg("path", { class: "area", d: "M" + pts.join("L") + "L" + last + " " + base + "L" + first + " " + base + "Z" }));
+  }
   if (d) s.append(svg("path", { class: "line", d }));
   points.forEach((p, i) => {
-    const dot = svg("circle", { class: p.rank ? "dot" : "gap", cx: x(i), cy: y(p.rank ?? 201), r: points.length > 30 ? 1.5 : 2.5 });
+    // The newest point gets a halo, so a single day of data still reads as "you are here".
+    if (i === points.length - 1 && p.rank) s.append(svg("circle", { class: "halo", cx: x(i), cy: y(p.rank), r: 7 }));
+    const dot = svg("circle", { class: p.rank ? "dot" : "gap", cx: x(i), cy: y(p.rank ?? 201), r: points.length > 30 ? 2 : 3.5 });
     dot.append(svg("title", {}, p.date + ": " + (p.rank ? "#" + p.rank : "200+")));
     s.append(dot);
   });
@@ -545,17 +565,30 @@ function rankChart(points) {
 
 function history() {
   const cc = state.country;
-  const charts = tracked.map((k) => {
-    const series = points(key(k.keyword, cc));
-    if (!series.length) return null;
-    const e = entry(k.keyword, cc);
+  const rows = tracked.map((k) => ({ k, series: points(key(k.keyword, cc)), e: entry(k.keyword, cc) })).filter((r) => r.series.length);
+  if (!rows.length) return empty("No history in " + flag(cc) + " " + cc.toUpperCase() + " yet. Run /searchd-track once a day to build it.");
+  const now = (r) => r.series[r.series.length - 1].rank;
+  const change = (r) => (r.series.length < 2 ? 0 : (r.series[0].rank ?? 201) - (now(r) ?? 201)); // + = moved up
+  const stat = (n, label) => el("div", { class: "panel stat" }, [el("b", { text: String(n) }), el("span", { text: label })]);
+  const summary = el("div", { class: "stats" }, [
+    stat(rows.filter((r) => now(r) && now(r) <= 10).length, "in the top 10"),
+    stat(rows.filter((r) => change(r) > 0).length, "moved up"),
+    stat(rows.filter((r) => change(r) < 0).length, "moved down"),
+  ]);
+  const charts = rows.map((r) => {
+    const ranked = r.series.filter((p) => p.rank).map((p) => p.rank);
+    const c = change(r);
     return el("div", { class: "panel chart" }, [
-      el("div", { class: "title" }, [el("span", { class: "kw", text: e ? e.phrase : k.keyword, title: k.keyword }), rankPill(series[series.length - 1].rank)]),
-      rankChart(series),
+      el("div", { class: "title" }, [el("span", { class: "kw", text: r.e ? r.e.phrase : r.k.keyword, title: r.k.keyword }), rankPill(now(r))]),
+      rankChart(r.series),
+      el("div", { class: "foot" }, [
+        el("span", {}, ["Best ", el("b", { text: ranked.length ? "#" + Math.min(...ranked) : "200+" })]),
+        el("span", {}, [el("b", { text: String(r.series.length) }), r.series.length === 1 ? " day tracked" : " days tracked"]),
+        r.series.length > 1 ? el("span", { class: c > 0 ? "delta up" : c < 0 ? "delta down" : "", text: !c ? "no change" : !r.series[0].rank ? "▲ entered the results" : !now(r) ? "▼ left the results" : (c > 0 ? "▲" : "▼") + Math.abs(c) + " overall" }) : null,
+      ]),
     ]);
-  }).filter(Boolean);
-  if (!charts.length) return empty("No history in " + flag(cc) + " " + cc.toUpperCase() + " yet. Run /searchd-track once a day to build it.");
-  const parts = [el("div", { class: "charts" }, charts)];
+  });
+  const parts = [summary, el("div", { class: "charts" }, charts)];
   if (D.history.dates.length < 2) parts.push(el("p", { class: "hint", text: "One day of history so far. Run /searchd-track daily (and after listing changes) to see the trend." }));
   return el("div", {}, parts);
 }
