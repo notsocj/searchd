@@ -24,7 +24,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const SIBLING_MESSAGE =
-  "searchd: install all five skills together (searchd-setup, searchd-find, searchd-track, searchd-audit, searchd-dashboard): npx skills add notsocj/searchd -g --skill '*'  (see README).";
+  "searchd: install all five skills together (searchd-setup, searchd-find, searchd-track, searchd-audit, searchd-dashboard): npx skills add https://github.com/notsocj/searchd --skill  (see README).";
 
 // ../../searchd-find/scripts/ relative to THIS file (not to wherever the user ran node from).
 const SHARED_ROOT = new URL("../../searchd-find/scripts/", import.meta.url);

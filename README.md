@@ -92,14 +92,16 @@ The split is deliberate: **scripts do everything that must be exact** (API calls
 **Recommended:** with the open [`skills`](https://skills.sh) installer (works for Claude Code, Codex, and other agents):
 
 ```bash
-npx skills add https://github.com/notsocj/searchd --skill '*' -g
+npx skills add https://github.com/notsocj/searchd --skill
 ```
 
-Choose **Symlink (Recommended)** when it asks.
+It installs all five skills (searchd-setup, searchd-find, searchd-track, searchd-audit, searchd-dashboard), which share code, so they always go together. Then it asks a few questions:
 
-- **`--skill '*'` matters.** searchd is five skills that share code, so install all five together. If one is missing, searchd tells you the command to fix it.
-- **Keep `-g`** so searchd works in every project, not just the folder you ran the installer in.
-- **Update:** `npx skills update -g`. **Remove:** `npx skills remove -g searchd-setup searchd-find searchd-track searchd-audit searchd-dashboard`.
+- **Which agents:** pick Claude Code, Codex, or both.
+- **Scope:** pick **Global**, so searchd works in every project, not just the folder you ran the installer in.
+- **Method:** pick **Symlink (Recommended)**.
+
+**Update:** `npx skills update -g`. **Remove:** `npx skills remove -g searchd-setup searchd-find searchd-track searchd-audit searchd-dashboard`.
 
 Start a new agent session afterwards so it sees the skills.
 
@@ -394,7 +396,7 @@ In `find.js keywords`, `"status": "tracked"` tracks a keyword and `"remove": tru
 | `Another searchd check is already running` | A run (maybe in the background) hasn't finished. Wait for it. |
 | `Skipped (no local phrase yet …)` | Some keywords aren't translated for some countries. `/searchd-find` fills them in. |
 | `app … isn't on the XX App Store` | Your app isn't sold in the first country you listed. Put a country where it's sold first. |
-| `searchd: install all five skills together` | One skill folder is missing; reinstall with `--skill '*'`. |
+| `searchd: install all five skills together` | One skill folder is missing; reinstall with `npx skills add https://github.com/notsocj/searchd --skill`. |
 | Everything says 200+ | Check the app ID in `.searchd/app.json`, and that the app is sold in those countries. |
 
 ## Limitations
