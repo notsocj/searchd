@@ -24,7 +24,7 @@
   /* Colors are tokens, so dark and light mode only swap values. Dark is the default. */
   :root {
     --bg: #0b0c0f; --panel: #13151a; --panel-2: #1a1d24; --hover: #1e222a;
-    --line: #23272f; --line-2: #2f343e; --text: #eceef2; --muted: #9ba1ae; --faint: #6b717e;
+    --side: #0e1014; --line: #23272f; --line-2: #2f343e; --text: #eceef2; --muted: #9ba1ae; --faint: #6b717e;
     --accent: #1fc27d; --accent-soft: rgba(31, 194, 125, 0.14); --accent-ink: #04140c;
     --gold: #f5c542; --gold-soft: rgba(245, 197, 66, 0.15);
     --good: #1fc27d; --good-soft: rgba(31, 194, 125, 0.13);
@@ -37,7 +37,7 @@
   /* Light: when the system is light (unless the user picked dark), or when the user picked light. */
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-      --bg: #f5f6f8; --panel: #ffffff; --panel-2: #f1f3f6; --hover: #eceff3;
+      --bg: #f5f6f8; --side: #ffffff; --panel: #ffffff; --panel-2: #f1f3f6; --hover: #eceff3;
       --line: #e3e6eb; --line-2: #d5d9e0; --text: #14171d; --muted: #5d6370; --faint: #8b909b;
       --accent: #0e9a5f; --accent-soft: rgba(14, 154, 95, 0.10); --accent-ink: #ffffff;
       --gold: #b9850a; --gold-soft: rgba(214, 160, 20, 0.14);
@@ -49,7 +49,7 @@
     }
   }
   :root[data-theme="light"] {
-    --bg: #f5f6f8; --panel: #ffffff; --panel-2: #f1f3f6; --hover: #eceff3;
+    --bg: #f5f6f8; --side: #ffffff; --panel: #ffffff; --panel-2: #f1f3f6; --hover: #eceff3;
     --line: #e3e6eb; --line-2: #d5d9e0; --text: #14171d; --muted: #5d6370; --faint: #8b909b;
     --accent: #0e9a5f; --accent-soft: rgba(14, 154, 95, 0.10); --accent-ink: #ffffff;
     --gold: #b9850a; --gold-soft: rgba(214, 160, 20, 0.14);
@@ -67,33 +67,55 @@
     font: 400 14px/1.5 "Poppins", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  .ic { width: 18px; height: 18px; flex: none; display: block; }
+  /* Strong ease-out: starts fast so a press feels heard. Used for every transition below. */
+  :root { --ease: cubic-bezier(0.23, 1, 0.32, 1); --side-w: 248px; }
+  button { transition: background-color 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease), transform 150ms var(--ease); }
+  button:active { transform: scale(0.97); }
 
-  /* Header */
-  header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  .app-icon { width: 48px; height: 48px; border-radius: 11px; border: 1px solid var(--line); background: var(--panel-2); flex: none; }
-  .app-meta { flex: 1; min-width: 0; }
-  h1 { font-size: 20px; font-weight: 600; margin: 0; line-height: 1.25; overflow-wrap: break-word; }
-  .sub { color: var(--muted); font-size: 13px; }
-  .brand { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; color: var(--muted); }
+  /* App frame: fixed sidebar | scrolling content */
+  .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); min-height: 100vh; }
+  .wrap { max-width: 1180px; width: 100%; margin: 0 auto; padding: 32px 32px 64px; }
+
+  /* Sidebar */
+  .side { position: sticky; top: 0; height: 100vh; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; padding: 18px 14px 14px; overflow-y: auto; }
+  .brand { font-weight: 600; font-size: 18px; letter-spacing: -0.02em; color: var(--text); padding: 2px 8px 14px; }
   .brand b { color: var(--accent); font-weight: 600; }
-  .icon-btn {
-    border: 1px solid var(--line-2); background: var(--panel); color: var(--muted);
-    border-radius: 999px; height: 32px; padding: 0 12px; font: inherit; font-size: 13px; cursor: pointer;
-  }
-  .icon-btn:hover { color: var(--text); background: var(--hover); }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .app-card { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 10px; margin-bottom: 12px; min-width: 0; }
+  .app-icon { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); flex: none; }
+  .app-card .meta { min-width: 0; }
+  .app-name { font-weight: 600; font-size: 13px; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .app-sub { color: var(--faint); font-size: 12px; white-space: nowrap; }
+  .nav-label { font-size: 12px; font-weight: 600; color: var(--faint); padding: 8px 10px 4px; }
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-btn { display: flex; align-items: center; gap: 11px; width: 100%; border: 0; background: transparent; color: var(--muted); padding: 9px 10px; border-radius: 9px; font-weight: 500; text-align: left; cursor: pointer; }
+  .nav-btn .lbl { flex: 1; }
+  .nav-btn.is-active { background: var(--accent-soft); color: var(--text); }
+  .nav-btn.is-active .ic { color: var(--accent); }
+  .count { font-size: 11px; font-weight: 600; min-width: 22px; text-align: center; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .nav-btn.is-active .count { background: var(--accent); color: var(--accent-ink); }
+  .side-spacer { flex: 1; min-height: 12px; }
+  .run-card { border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); padding: 12px; display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+  .run-card b { color: var(--text); font-weight: 600; }
+  .flags { font-size: 15px; letter-spacing: 2px; line-height: 1.5; }
+  .side-foot { display: flex; align-items: center; padding: 8px 2px 0; }
+  .theme-btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 9px; padding: 7px 10px; cursor: pointer; font-size: 13px; }
+  .theme-btn:focus-visible { outline-offset: 0; }
 
-  /* Tabs: scroll sideways on small screens instead of wrapping */
-  nav.tabs { display: flex; gap: 4px; margin: 22px 0 16px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
-  nav.tabs::-webkit-scrollbar { display: none; }
-  nav.tabs button {
-    border: 0; background: none; color: var(--muted); font: inherit; font-weight: 600; font-size: 14px;
-    padding: 10px 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; white-space: nowrap;
+  /* Hover only where hover exists, so taps on a phone don't leave things stuck highlighted */
+  @media (hover: hover) and (pointer: fine) {
+    .nav-btn:hover { background: var(--hover); color: var(--text); }
+    .theme-btn:hover { background: var(--hover); color: var(--text); }
   }
-  nav.tabs button:hover { color: var(--text); }
-  nav.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
-  nav.tabs .count { color: var(--faint); font-weight: 400; margin-left: 4px; }
+
+  /* Page head: what you're looking at, in plain words */
+  .page-head { margin-bottom: 18px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0; line-height: 1.25; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .page-head .sub { margin-top: 2px; max-width: 70ch; }
+  .topbar { display: none; }
 
   /* Toolbar: country chips + filters */
   .toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 14px; }
@@ -101,7 +123,8 @@
     border: 1px solid var(--line-2); background: var(--panel); color: var(--muted);
     border-radius: 999px; padding: 4px 11px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
   }
-  .chip:hover { color: var(--text); }
+  .chip { transition: background-color 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease), transform 150ms var(--ease); }
+  @media (hover: hover) and (pointer: fine) { .chip:hover { color: var(--text); border-color: var(--accent); } }
   .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
   .toolbar .sep { width: 1px; height: 20px; background: var(--line-2); margin: 0 4px; }
   .hint { color: var(--faint); font-size: 12px; }
@@ -113,7 +136,7 @@
   th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
   tr:last-child td { border-bottom: 0; }
   th { color: var(--faint); font-weight: 400; font-size: 12px; white-space: nowrap; position: sticky; top: 0; background: var(--panel); }
-  tbody tr:hover td { background: var(--hover); }
+  @media (hover: hover) and (pointer: fine) { tbody tr:hover td { background: var(--hover); } }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   td.center, th.center { text-align: center; }
   .kw { font-weight: 600; }
@@ -121,7 +144,7 @@
   .status { font-size: 11px; color: var(--faint); border: 1px solid var(--line-2); border-radius: 999px; padding: 0 7px; margin-left: 6px; white-space: nowrap; }
   /* The first column stays visible while the board scrolls sideways */
   .board td:first-child, .board th:first-child { position: sticky; left: 0; background: var(--panel); z-index: 1; min-width: 150px; }
-  .board tbody tr:hover td:first-child { background: var(--hover); }
+  @media (hover: hover) and (pointer: fine) { .board tbody tr:hover td:first-child { background: var(--hover); } }
 
   /* Rank pills, colored by band */
   .rank { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 2px 8px; border-radius: 999px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -175,34 +198,85 @@
 
   .empty { color: var(--muted); padding: 40px 16px; text-align: center; }
   .empty code { background: var(--panel-2); padding: 2px 6px; border-radius: 6px; }
-  footer { color: var(--faint); font-size: 12px; margin-top: 28px; }
+  footer { color: var(--faint); font-size: 12px; margin-top: 28px; max-width: 70ch; }
 
+  @media (prefers-reduced-motion: reduce) { button { transition: none; } button:active { transform: none; } }
+
+  /* Tablet: the sidebar shrinks to an icon rail */
+  @media (max-width: 1000px) {
+    :root { --side-w: 68px; }
+    .side { padding: 14px 10px; align-items: center; }
+    .brand { font-size: 0; padding: 4px 0 12px; }
+    .brand::before { content: "s"; font-size: 20px; }
+    .brand b, .app-card .meta, .nav-label, .nav-btn .lbl, .run-card, .theme-btn .lbl { display: none; }
+    .app-card { padding: 4px; border-radius: 12px; }
+    .nav-btn { justify-content: center; padding: 10px; position: relative; width: auto; }
+    .nav-btn .count { position: absolute; top: 1px; right: -3px; min-width: 18px; padding: 0 5px; font-size: 10px; }
+    .theme-btn { padding: 9px; }
+    .wrap { padding: 28px 24px 56px; }
+  }
+
+  /* Phone: slim top bar + bottom tab bar (thumb reach), no sidebar */
   @media (max-width: 640px) {
-    .wrap { padding-top: 16px; }
-    header .brand { display: none; }
-    h1 { font-size: 17px; }
+    .app { display: block; }
+    .side { position: static; height: auto; display: contents; }
+    .side .brand, .side .app-card, .side .nav-label, .side .run-card, .side .side-spacer, .side .side-foot { display: none; }
+    .topbar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; position: sticky; top: 0; z-index: 5; background: var(--side); border-bottom: 1px solid var(--line); }
+    .topbar .app-icon { width: 30px; height: 30px; border-radius: 8px; }
+    .topbar .app-name { flex: 1; min-width: 0; -webkit-line-clamp: 1; }
+    .nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; flex-direction: row; justify-content: space-around; gap: 0; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); background: var(--side); border-top: 1px solid var(--line); }
+    .nav-btn { flex-direction: column; gap: 3px; font-size: 11px; padding: 6px 2px; flex: 1; min-width: 0; justify-content: center; align-items: center; }
+    .nav-btn .lbl { display: block; flex: none; }
+    .nav-btn .count { display: none; }
+    .nav-btn.is-active { background: transparent; color: var(--accent); }
+    .wrap { padding: 18px 16px calc(84px + env(safe-area-inset-bottom)); }
+    h1 { font-size: 19px; }
     th, td { padding: 8px 9px; }
     .list li { grid-template-columns: 36px 1fr auto; }
     .list .pos { display: none; }
     .list img { width: 36px; height: 36px; }
+    .toolbar { flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding-inline: 16px; scrollbar-width: none; }
+    .toolbar::-webkit-scrollbar { display: none; }
+    .toolbar .hint { white-space: nowrap; }
   }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <img class="app-icon" id="app-icon" alt="">
-    <div class="app-meta">
-      <h1 id="app-name"></h1>
-      <div class="sub" id="app-sub"></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-board" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></g></symbol>
+  <symbol id="i-keywords" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16 16"/></g></symbol>
+  <symbol id="i-competitors" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 3-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.7a3 3 0 010 6"/><path d="M18 14.3c2 .7 3.5 2.4 3.5 5.2"/></g></symbol>
+  <symbol id="i-ideas" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0012 3z"/></g></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-6"/></g></symbol>
+  <symbol id="i-theme" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.6" fill="none"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 010 17z" fill="currentColor"/></g></symbol>
+</svg>
+<div class="app">
+  <aside class="side" aria-label="Navigation">
+    <div class="brand">search<b>d</b></div>
+    <div class="app-card">
+      <img class="app-icon" id="app-icon" alt="">
+      <div class="meta"><div class="app-name" id="app-name"></div><div class="app-sub" id="app-sub"></div></div>
     </div>
-    <span class="brand">search<b>d</b></span>
-    <button class="icon-btn" id="theme" type="button" aria-label="Switch dark or light mode">Theme</button>
-  </header>
-  <nav class="tabs" role="tablist" id="tabs"></nav>
-  <div class="toolbar" id="toolbar"></div>
-  <main id="view"></main>
-  <footer id="footer"></footer>
+    <nav class="nav" id="tabs" aria-label="Views"></nav>
+    <div class="side-spacer"></div>
+    <div class="run-card" id="run-card"></div>
+    <div class="side-foot">
+      <button class="theme-btn" type="button" aria-label="Switch dark or light mode"><svg class="ic" aria-hidden="true"><use href="#i-theme"/></svg><span class="lbl">Theme</span></button>
+    </div>
+  </aside>
+  <div>
+    <div class="topbar">
+      <img class="app-icon" id="top-icon" alt="">
+      <div class="app-name" id="top-name"></div>
+      <button class="theme-btn" type="button" aria-label="Switch dark or light mode"><svg class="ic" aria-hidden="true"><use href="#i-theme"/></svg></button>
+    </div>
+    <div class="wrap">
+      <div class="page-head"><h1 id="page-title"></h1><div class="sub" id="page-desc"></div></div>
+      <div class="toolbar" id="toolbar"></div>
+      <main id="view"></main>
+      <footer id="footer"></footer>
+    </div>
+  </div>
 </div>
 
 <script id="searchd-data" type="application/json">__SEARCHD_DATA__</script>
@@ -294,23 +368,28 @@ const save = () => { try { localStorage.setItem("searchd-view", JSON.stringify(s
 // Tabs
 // ---------------------------------------------------------------------------------------------
 const TABS = [
-  { id: "board", label: "Board", count: () => D.keywords.length, render: board },
-  { id: "keywords", label: "Keywords", count: () => tracked.length, render: () => keywordTable(tracked, "rank"), countries: true },
-  { id: "competitors", label: "Competitors", count: () => D.losingTo.length, render: competitors, countries: true },
-  { id: "ideas", label: "Ideas", count: () => ideas.length, render: () => keywordTable(ideas, "opportunity"), countries: true },
-  { id: "history", label: "History", count: () => D.history.dates.length, render: history, countries: true },
+  { id: "board", label: "Board", icon: "board", desc: "Every keyword in every country, at a glance.", count: () => D.keywords.length, render: board },
+  { id: "keywords", label: "Keywords", icon: "keywords", desc: "Where you rank for the keywords you track.", count: () => tracked.length, render: () => keywordTable(tracked, "rank"), countries: true },
+  { id: "competitors", label: "Competitors", icon: "competitors", desc: "The apps ranking above you most often.", count: () => D.losingTo.length, render: competitors, countries: true },
+  { id: "ideas", label: "Ideas", icon: "ideas", desc: "Keywords worth adding, best opportunity first.", count: () => ideas.length, render: () => keywordTable(ideas, "opportunity"), countries: true },
+  { id: "history", label: "History", icon: "history", desc: "How each keyword's rank has moved day to day.", count: () => D.history.dates.length, render: history, countries: true },
 ];
 
 function render() {
-  const tabs = document.getElementById("tabs");
-  tabs.replaceChildren(...TABS.map((t) => {
-    const b = el("button", { role: "tab", "aria-selected": String(t.id === state.tab), type: "button" }, [t.label, el("span", { class: "count", text: String(t.count()) })]);
-    b.addEventListener("click", () => { state.tab = t.id; save(); render(); });
+  const tab = TABS.find((t) => t.id === state.tab) || TABS[0];
+  document.getElementById("tabs").replaceChildren(...TABS.map((t) => {
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("class", "ic");
+    icon.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", "#i-" + t.icon);
+    icon.append(use);
+    const b = el("button", { class: "nav-btn" + (t.id === tab.id ? " is-active" : ""), "aria-current": t.id === tab.id ? "page" : null, type: "button", title: t.label }, [icon, el("span", { class: "lbl", text: t.label }), el("span", { class: "count", text: String(t.count()) })]);
+    b.addEventListener("click", () => { state.tab = t.id; save(); render(); window.scrollTo(0, 0); });
     return b;
   }));
-  // On a phone the tab row scrolls sideways: keep the selected tab in view.
-  tabs.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  const tab = TABS.find((t) => t.id === state.tab) || TABS[0];
+  document.getElementById("page-title").textContent = tab.label;
+  document.getElementById("page-desc").textContent = tab.desc;
   document.getElementById("toolbar").replaceChildren(...toolbar(tab));
   document.getElementById("view").replaceChildren(tab.render());
 }
@@ -484,17 +563,21 @@ function history() {
 // ---------------------------------------------------------------------------------------------
 // Header, theme toggle, start
 // ---------------------------------------------------------------------------------------------
-const icon = document.getElementById("app-icon");
-if (D.app.icon) icon.src = D.app.icon; else icon.remove();
-document.getElementById("app-name").textContent = D.app.name;
+for (const id of ["app-icon", "top-icon"]) {
+  const img = document.getElementById(id);
+  if (D.app.icon) { img.src = D.app.icon; img.referrerPolicy = "no-referrer"; } else img.remove();
+}
+document.getElementById("app-name").textContent = document.getElementById("top-name").textContent = D.app.name;
+document.getElementById("app-sub").textContent = tracked.length + " tracked · " + ideas.length + " ideas";
 const updated = D.updatedAt ? new Date(D.updatedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "never";
-document.getElementById("app-sub").textContent = tracked.length + " tracked · " + ideas.length + " ideas · " + D.app.countries.map(flag).join(" ") + " · checked " + updated;
+const run = document.getElementById("run-card");
+run.append(el("div", { text: "Last checked" }), el("b", { text: updated }), el("div", { class: "flags", text: D.app.countries.map(flag).join(" ") }));
 document.getElementById("footer").textContent = "Built by searchd from Apple's iTunes Search API. Its order can differ slightly from the App Store app. Re-run /searchd-dashboard to refresh.";
 
 // Theme: follows the system until you pick one; your pick is remembered in this browser.
 const root = document.documentElement;
 try { const t = localStorage.getItem("searchd-theme"); if (t) root.dataset.theme = t; } catch {}
-document.getElementById("theme").addEventListener("click", () => {
+for (const btn of document.querySelectorAll(".theme-btn")) btn.addEventListener("click", () => {
   const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   root.dataset.theme = dark ? "light" : "dark";
   try { localStorage.setItem("searchd-theme", root.dataset.theme); } catch {}
