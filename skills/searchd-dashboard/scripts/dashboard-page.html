@@ -1,0 +1,498 @@
+<!doctype html>
+<!--
+  dashboard-page.html — the searchd dashboard template.
+
+  dashboard.js copies this file into .searchd/dashboard.html and fills in three placeholders:
+  the two fonts (base64) and the data (JSON). Everything else is right here: CSS at the top,
+  JavaScript at the bottom, no libraries, nothing loaded from the internet except app icons
+  from Apple's servers.
+
+  Safety: app names come from the App Store, so they're untrusted text. They're only ever
+  inserted with textContent (never innerHTML), and the Content-Security-Policy below blocks
+  every script except the inline ones in this file.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:">
+<title>searchd</title>
+<style>
+  @font-face { font-family: "Poppins"; font-weight: 400; font-display: swap; src: url("data:font/woff2;base64,/*FONT_400*/") format("woff2"); }
+  @font-face { font-family: "Poppins"; font-weight: 600; font-display: swap; src: url("data:font/woff2;base64,/*FONT_600*/") format("woff2"); }
+
+  /* Colors are tokens, so dark and light mode only swap values. Dark is the default. */
+  :root {
+    --bg: #0b0c0f; --panel: #13151a; --panel-2: #1a1d24; --hover: #1e222a;
+    --line: #23272f; --line-2: #2f343e; --text: #eceef2; --muted: #9ba1ae; --faint: #6b717e;
+    --accent: #1fc27d; --accent-soft: rgba(31, 194, 125, 0.14); --accent-ink: #04140c;
+    --gold: #f5c542; --gold-soft: rgba(245, 197, 66, 0.15);
+    --good: #1fc27d; --good-soft: rgba(31, 194, 125, 0.13);
+    --mid: #6ea8ff; --mid-soft: rgba(110, 168, 255, 0.12);
+    --low: #9ba1ae; --low-soft: rgba(155, 161, 174, 0.10);
+    --hard: #ff8a4c; --up: #1fc27d; --down: #ff6b6b;
+    --radius: 12px; --radius-sm: 8px;
+    color-scheme: dark;
+  }
+  /* Light: when the system is light (unless the user picked dark), or when the user picked light. */
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f5f6f8; --panel: #ffffff; --panel-2: #f1f3f6; --hover: #eceff3;
+      --line: #e3e6eb; --line-2: #d5d9e0; --text: #14171d; --muted: #5d6370; --faint: #8b909b;
+      --accent: #0e9a5f; --accent-soft: rgba(14, 154, 95, 0.10); --accent-ink: #ffffff;
+      --gold: #b9850a; --gold-soft: rgba(214, 160, 20, 0.14);
+      --good: #0e9a5f; --good-soft: rgba(14, 154, 95, 0.10);
+      --mid: #2f6fe0; --mid-soft: rgba(47, 111, 224, 0.09);
+      --low: #6b7180; --low-soft: rgba(107, 113, 128, 0.09);
+      --hard: #d9622b; --up: #0e9a5f; --down: #d64545;
+      color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f6f8; --panel: #ffffff; --panel-2: #f1f3f6; --hover: #eceff3;
+    --line: #e3e6eb; --line-2: #d5d9e0; --text: #14171d; --muted: #5d6370; --faint: #8b909b;
+    --accent: #0e9a5f; --accent-soft: rgba(14, 154, 95, 0.10); --accent-ink: #ffffff;
+    --gold: #b9850a; --gold-soft: rgba(214, 160, 20, 0.14);
+    --good: #0e9a5f; --good-soft: rgba(14, 154, 95, 0.10);
+    --mid: #2f6fe0; --mid-soft: rgba(47, 111, 224, 0.09);
+    --low: #6b7180; --low-soft: rgba(107, 113, 128, 0.09);
+    --hard: #d9622b; --up: #0e9a5f; --down: #d64545;
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 400 14px/1.5 "Poppins", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+
+  /* Header */
+  header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .app-icon { width: 48px; height: 48px; border-radius: 11px; border: 1px solid var(--line); background: var(--panel-2); flex: none; }
+  .app-meta { flex: 1; min-width: 0; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; line-height: 1.25; overflow-wrap: break-word; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .brand { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; color: var(--muted); }
+  .brand b { color: var(--accent); font-weight: 600; }
+  .icon-btn {
+    border: 1px solid var(--line-2); background: var(--panel); color: var(--muted);
+    border-radius: 999px; height: 32px; padding: 0 12px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .icon-btn:hover { color: var(--text); background: var(--hover); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Tabs: scroll sideways on small screens instead of wrapping */
+  nav.tabs { display: flex; gap: 4px; margin: 22px 0 16px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs button {
+    border: 0; background: none; color: var(--muted); font: inherit; font-weight: 600; font-size: 14px;
+    padding: 10px 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; white-space: nowrap;
+  }
+  nav.tabs button:hover { color: var(--text); }
+  nav.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  nav.tabs .count { color: var(--faint); font-weight: 400; margin-left: 4px; }
+
+  /* Toolbar: country chips + filters */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 14px; }
+  .chip {
+    border: 1px solid var(--line-2); background: var(--panel); color: var(--muted);
+    border-radius: 999px; padding: 4px 11px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .chip:hover { color: var(--text); }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .toolbar .sep { width: 1px; height: 20px; background: var(--line-2); margin: 0 4px; }
+  .hint { color: var(--faint); font-size: 12px; }
+
+  /* Panels and tables */
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  th { color: var(--faint); font-weight: 400; font-size: 12px; white-space: nowrap; position: sticky; top: 0; background: var(--panel); }
+  tbody tr:hover td { background: var(--hover); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.center, th.center { text-align: center; }
+  .kw { font-weight: 600; }
+  .orig { color: var(--faint); font-size: 12px; }
+  .status { font-size: 11px; color: var(--faint); border: 1px solid var(--line-2); border-radius: 999px; padding: 0 7px; margin-left: 6px; white-space: nowrap; }
+  /* The first column stays visible while the board scrolls sideways */
+  .board td:first-child, .board th:first-child { position: sticky; left: 0; background: var(--panel); z-index: 1; min-width: 150px; }
+  .board tbody tr:hover td:first-child { background: var(--hover); }
+
+  /* Rank pills, colored by band */
+  .rank { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 2px 8px; border-radius: 999px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .medal { background: var(--gold-soft); font-size: 16px; line-height: 1.3; padding: 1px 8px; }
+  .r-10 { background: var(--good-soft); color: var(--good); }
+  .r-50 { background: var(--mid-soft); color: var(--mid); }
+  .r-200 { background: var(--low-soft); color: var(--low); }
+  .r-none { color: var(--faint); font-weight: 400; }
+  .delta { font-size: 11px; margin-left: 4px; font-weight: 600; }
+  .delta.up { color: var(--up); }
+  .delta.down { color: var(--down); }
+
+  /* Score bars */
+  .score { display: flex; align-items: center; gap: 8px; min-width: 110px; }
+  .score .n { width: 24px; text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { flex: 1; height: 6px; border-radius: 999px; background: var(--panel-2); overflow: hidden; min-width: 50px; }
+  .bar span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+  .bar.hard span { background: var(--hard); }
+  tr.sweet td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+  .star { color: var(--gold); margin-left: 4px; }
+
+  /* App icons in the "top 5" column */
+  .icons { display: flex; gap: 4px; }
+  .icons img { width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel-2); }
+  .icons img.me { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* Competitors */
+  .list { list-style: none; margin: 0; padding: 0; }
+  .list li { display: grid; grid-template-columns: 28px 44px 1fr auto; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .list li:last-child { border-bottom: 0; }
+  .list .pos { color: var(--faint); font-variant-numeric: tabular-nums; text-align: right; }
+  .list img { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); }
+  .list .name { font-weight: 600; overflow-wrap: anywhere; }
+  .list .beats { text-align: right; white-space: nowrap; }
+  .list .beats b { font-size: 18px; }
+  .tag { font-size: 11px; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 8px; margin-left: 6px; font-weight: 600; white-space: nowrap; }
+  h2 { font-size: 15px; font-weight: 600; margin: 28px 0 10px; }
+  h2:first-child { margin-top: 0; }
+
+  /* History charts: small multiples */
+  .charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .chart { padding: 12px 14px 8px; }
+  .chart .title { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .chart .title .kw { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chart svg { display: block; width: 100%; height: auto; margin-top: 6px; overflow: visible; }
+  .chart .grid { stroke: var(--line); stroke-width: 1; }
+  .chart .axis { fill: var(--faint); font-size: 10px; font-family: inherit; }
+  .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .dot { fill: var(--accent); }
+  .chart .gap { fill: var(--faint); }
+
+  .empty { color: var(--muted); padding: 40px 16px; text-align: center; }
+  .empty code { background: var(--panel-2); padding: 2px 6px; border-radius: 6px; }
+  footer { color: var(--faint); font-size: 12px; margin-top: 28px; }
+
+  @media (max-width: 640px) {
+    .wrap { padding-top: 16px; }
+    header .brand { display: none; }
+    h1 { font-size: 17px; }
+    th, td { padding: 8px 9px; }
+    .list li { grid-template-columns: 36px 1fr auto; }
+    .list .pos { display: none; }
+    .list img { width: 36px; height: 36px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img class="app-icon" id="app-icon" alt="">
+    <div class="app-meta">
+      <h1 id="app-name"></h1>
+      <div class="sub" id="app-sub"></div>
+    </div>
+    <span class="brand">search<b>d</b></span>
+    <button class="icon-btn" id="theme" type="button" aria-label="Switch dark or light mode">Theme</button>
+  </header>
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <div class="toolbar" id="toolbar"></div>
+  <main id="view"></main>
+  <footer id="footer"></footer>
+</div>
+
+<script id="searchd-data" type="application/json">__SEARCHD_DATA__</script>
+<script>
+"use strict";
+// ---------------------------------------------------------------------------------------------
+// Data + small helpers
+// ---------------------------------------------------------------------------------------------
+const D = JSON.parse(document.getElementById("searchd-data").textContent);
+const MEDALS = ["🥇", "🥈", "🥉"];
+const key = (keyword, country) => keyword + "|" + country;
+const entry = (keyword, country) => D.entries[key(keyword, country)];
+const tracked = D.keywords.filter((k) => k.status === "tracked");
+const ideas = D.keywords.filter((k) => k.status === "idea");
+const fmt = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
+
+/** Flag emoji from a 2-letter code: "de" → 🇩🇪 (two "regional indicator" letters). */
+const flag = (cc) => [...cc.toUpperCase()].map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)).join("");
+
+/** Create an element. `text` always goes in as textContent, so untrusted text can't become HTML. */
+function el(tag, props = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [name, value] of Object.entries(props)) {
+    if (value === undefined || value === null || value === false) continue;
+    if (name === "text") node.textContent = value;
+    else if (name === "class") node.className = value;
+    else node.setAttribute(name, value);
+  }
+  for (const child of [].concat(children)) if (child) node.append(child);
+  return node;
+}
+
+/** The rank pill: 🥇🥈🥉 for 1–3, "#12" otherwise, "200+" when not in the results. */
+function rankPill(rank) {
+  if (!rank) return el("span", { class: "rank r-none", text: "200+" });
+  const band = rank <= 10 ? "r-10" : rank <= 50 ? "r-50" : "r-200";
+  if (rank <= 3) return el("span", { class: "rank medal", text: MEDALS[rank - 1], title: "#" + rank, "aria-label": "rank " + rank });
+  return el("span", { class: "rank " + band, text: "#" + rank });
+}
+
+/**
+ * Rank change since the previous day this keyword was checked. History files hold
+ * { date, ranks: { "keyword|cc": rank } }; null means 200+, which we count as 201.
+ */
+function delta(k) {
+  const days = D.history.filter((h) => k in h.ranks);
+  if (days.length < 2) return null;
+  const before = days[days.length - 2].ranks[k] ?? 201;
+  const now = days[days.length - 1].ranks[k] ?? 201;
+  const change = before - now;
+  if (!change) return null;
+  return el("span", { class: "delta " + (change > 0 ? "up" : "down"), text: (change > 0 ? "▲" : "▼") + Math.abs(change), title: "since " + days[days.length - 2].date });
+}
+
+/** A 0–100 score as a number + bar. `hard` colors it like difficulty. */
+function scoreBar(value, hard) {
+  const fill = el("span");
+  fill.style.width = Math.max(2, value) + "%"; // CSSOM, so it works under the CSP
+  return el("div", { class: "score" }, [el("span", { class: "n", text: String(value) }), el("div", { class: "bar" + (hard ? " hard" : "") }, fill)]);
+}
+
+const isSweet = (e) => e.volume >= D.sweetSpot.minVolume && e.difficulty <= D.sweetSpot.maxDifficulty;
+
+function appIcon(app, cls) {
+  return el("img", { src: app.icon || null, alt: app.name, title: app.name, loading: "lazy", class: cls, referrerpolicy: "no-referrer" });
+}
+
+function empty(message) {
+  return el("div", { class: "panel empty", text: message });
+}
+
+// ---------------------------------------------------------------------------------------------
+// State: which tab, country and filter are showing. Remembered per browser when possible.
+// ---------------------------------------------------------------------------------------------
+const state = { tab: "board", country: D.app.countries[0], boardFilter: "tracked" };
+try { Object.assign(state, JSON.parse(localStorage.getItem("searchd-view") || "{}")); } catch {}
+if (!D.app.countries.includes(state.country)) state.country = D.app.countries[0];
+const save = () => { try { localStorage.setItem("searchd-view", JSON.stringify(state)); } catch {} };
+
+// ---------------------------------------------------------------------------------------------
+// Tabs
+// ---------------------------------------------------------------------------------------------
+const TABS = [
+  { id: "board", label: "Board", count: () => D.keywords.length, render: board },
+  { id: "keywords", label: "Keywords", count: () => tracked.length, render: () => keywordTable(tracked, "rank"), countries: true },
+  { id: "competitors", label: "Competitors", count: () => D.losingTo.length, render: competitors, countries: true },
+  { id: "ideas", label: "Ideas", count: () => ideas.length, render: () => keywordTable(ideas, "opportunity"), countries: true },
+  { id: "history", label: "History", count: () => D.history.length, render: history, countries: true },
+];
+
+function render() {
+  const tabs = document.getElementById("tabs");
+  tabs.replaceChildren(...TABS.map((t) => {
+    const b = el("button", { role: "tab", "aria-selected": String(t.id === state.tab), type: "button" }, [t.label, el("span", { class: "count", text: String(t.count()) })]);
+    b.addEventListener("click", () => { state.tab = t.id; save(); render(); });
+    return b;
+  }));
+  // On a phone the tab row scrolls sideways: keep the selected tab in view.
+  tabs.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  const tab = TABS.find((t) => t.id === state.tab) || TABS[0];
+  document.getElementById("toolbar").replaceChildren(...toolbar(tab));
+  document.getElementById("view").replaceChildren(tab.render());
+}
+
+function chip(label, pressed, onClick) {
+  const b = el("button", { class: "chip", type: "button", "aria-pressed": String(pressed), text: label });
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function toolbar(tab) {
+  const items = [];
+  if (tab.id === "board") {
+    for (const [id, label] of [["tracked", "Tracked"], ["idea", "Ideas"], ["all", "All"]]) {
+      items.push(chip(label, state.boardFilter === id, () => { state.boardFilter = id; save(); render(); }));
+    }
+    items.push(el("span", { class: "hint", text: "Hover a rank to see the local phrase searched." }));
+  }
+  if (tab.countries) {
+    for (const cc of D.app.countries) {
+      items.push(chip(flag(cc) + " " + cc.toUpperCase(), state.country === cc, () => { state.country = cc; save(); render(); }));
+    }
+  }
+  if (tab.id === "ideas") {
+    items.push(el("span", { class: "sep" }), el("span", { class: "hint", text: "★ sweet spot: volume ≥ " + D.sweetSpot.minVolume + " and difficulty ≤ " + D.sweetSpot.maxDifficulty }));
+  }
+  return items;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Board: keyword × country rank grid
+// ---------------------------------------------------------------------------------------------
+function board() {
+  const rows = state.boardFilter === "all" ? D.keywords : D.keywords.filter((k) => k.status === state.boardFilter);
+  if (!rows.length) return empty(state.boardFilter === "idea" ? "No ideas yet. Run /searchd-find to brainstorm some." : "No keywords here yet.");
+  const head = el("tr", {}, [el("th", { text: "Keyword" }), ...D.app.countries.map((cc) => el("th", { class: "center", text: flag(cc) + " " + cc.toUpperCase() }))]);
+  const body = rows.map((k) => el("tr", {}, [
+    el("td", {}, [el("span", { class: "kw", text: k.keyword }), state.boardFilter === "all" ? el("span", { class: "status", text: k.status }) : null]),
+    ...D.app.countries.map((cc) => {
+      const e = entry(k.keyword, cc);
+      if (!e) return el("td", { class: "center" }, el("span", { class: "hint", text: "—", title: "not checked yet" }));
+      return el("td", { class: "center", title: flag(cc) + " " + e.phrase }, [rankPill(e.rank), delta(key(k.keyword, cc))]);
+    }),
+  ]));
+  return el("div", { class: "panel scroll" }, el("table", { class: "board" }, [el("thead", {}, head), el("tbody", {}, body)]));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Keywords and Ideas: one country at a time, with volume, difficulty and the top 5 apps
+// ---------------------------------------------------------------------------------------------
+function keywordTable(list, sortBy) {
+  const cc = state.country;
+  const rows = list.map((k) => ({ k, e: entry(k.keyword, cc) })).filter((r) => r.e);
+  if (!rows.length) {
+    return empty(list.length ? "Nothing checked in " + flag(cc) + " " + cc.toUpperCase() + " yet. Run /searchd-find." : list === ideas ? "No ideas yet. Run /searchd-find to brainstorm some." : "No tracked keywords yet. Run /searchd-setup or /searchd-find.");
+  }
+  // Rank: best first, 200+ last. Opportunity: highest first.
+  rows.sort(sortBy === "rank" ? (a, b) => (a.e.rank ?? 999) - (b.e.rank ?? 999) : (a, b) => b.e.opportunity - a.e.opportunity);
+  const head = el("tr", {}, ["Keyword", "Rank", "Volume", "Difficulty", "Opportunity", "Top 5"].map((t, i) => el("th", { class: i === 1 ? "center" : i === 4 ? "num" : "", text: t })));
+  const body = rows.map(({ k, e }) => {
+    const sweet = isSweet(e);
+    return el("tr", { class: sweet && list === ideas ? "sweet" : "" }, [
+      el("td", {}, [
+        el("div", {}, [el("span", { class: "kw", text: e.phrase }), sweet ? el("span", { class: "star", text: "★", title: "sweet spot" }) : null]),
+        e.phrase !== k.keyword ? el("div", { class: "orig", text: k.keyword }) : null,
+      ]),
+      el("td", { class: "center" }, [rankPill(e.rank), delta(key(k.keyword, cc))]),
+      el("td", {}, scoreBar(e.volume)),
+      el("td", {}, scoreBar(e.difficulty, true)),
+      el("td", { class: "num", text: String(e.opportunity) }),
+      el("td", {}, el("div", { class: "icons" }, e.top.slice(0, 5).map((a) => appIcon(a, a.id === D.app.id ? "me" : "")))),
+    ]);
+  });
+  const hint = el("p", { class: "hint", text: "Volume is a demand estimate from how many top-50 apps target the phrase, not a real search count. Difficulty comes from the top 10 apps' rating counts." });
+  return el("div", {}, [el("div", { class: "panel scroll" }, el("table", {}, [el("thead", {}, head), el("tbody", {}, body)])), hint]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Competitors: who beats you most, plus a head-to-head with the competitors you added
+// ---------------------------------------------------------------------------------------------
+function competitors() {
+  const parts = [];
+  const total = Object.keys(D.entries).length;
+  const mine = new Set(D.app.competitors.map((c) => c.id));
+  parts.push(el("h2", { text: "Losing to" }));
+  if (!D.losingTo.length) parts.push(empty("Nobody ranks above you in any check. Nice."));
+  else {
+    parts.push(el("ul", { class: "panel list" }, D.losingTo.map((a, i) => el("li", {}, [
+      el("span", { class: "pos", text: String(i + 1) }),
+      appIcon(a),
+      el("div", {}, [
+        el("div", {}, [el("span", { class: "name", text: a.name }), mine.has(a.id) ? el("span", { class: "tag", text: "your competitor" }) : null]),
+        el("div", { class: "sub", text: fmt.format(a.ratings) + " ratings · average position #" + a.avgPosition }),
+      ]),
+      el("div", { class: "beats" }, [el("b", { text: String(a.beats) }), el("div", { class: "sub", text: "of " + total + " checks" })]),
+    ]))));
+    parts.push(el("p", { class: "hint", text: "Counts every keyword × country where the app is in the top 10 and ranks above you (all countries)." }));
+  }
+
+  if (D.app.competitors.length) {
+    const cc = state.country;
+    parts.push(el("h2", { text: "Head to head · " + flag(cc) + " " + cc.toUpperCase() }));
+    const head = el("tr", {}, [el("th", { text: "Keyword" }), el("th", { class: "center", text: "You" }), ...D.app.competitors.map((c) => el("th", { class: "center" }, el("div", { class: "icons" }, [appIcon(c), el("span", { text: c.name.split(/[:\-–]/)[0].trim() })])))]);
+    const rows = D.keywords.map((k) => entry(k.keyword, cc)).filter(Boolean).map((e) => el("tr", {}, [
+      el("td", {}, el("span", { class: "kw", text: e.phrase })),
+      el("td", { class: "center" }, rankPill(e.rank)),
+      ...D.app.competitors.map((c) => el("td", { class: "center" }, rankPill(e.competitors?.[c.id] ?? null))),
+    ]));
+    parts.push(rows.length ? el("div", { class: "panel scroll" }, el("table", {}, [el("thead", {}, head), el("tbody", {}, rows)])) : empty("Nothing checked in this country yet."));
+  }
+  return el("div", {}, parts);
+}
+
+// ---------------------------------------------------------------------------------------------
+// History: one small rank-over-time chart per tracked keyword
+// ---------------------------------------------------------------------------------------------
+const SVG = "http://www.w3.org/2000/svg";
+function svg(tag, attrs = {}, text) {
+  const node = document.createElementNS(SVG, tag);
+  for (const [n, v] of Object.entries(attrs)) node.setAttribute(n, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+/**
+ * Ranks are drawn on a LOG scale with #1 at the top: moving from #40 to #20 matters as much as
+ * #4 to #2, and a linear scale would squash the top 10 (where it really counts) into a sliver.
+ */
+function rankChart(points) {
+  const W = 300, H = 120, L = 30, R = 8, T = 6, B = 20;
+  const y = (rank) => T + (Math.log(rank) / Math.log(201)) * (H - T - B);
+  const x = (i) => (points.length === 1 ? (L + W - R) / 2 : L + (i / (points.length - 1)) * (W - L - R));
+  const s = svg("svg", { viewBox: "0 0 " + W + " " + H, role: "img" });
+  for (const [rank, label] of [[1, "1"], [10, "10"], [50, "50"], [201, "200+"]]) {
+    s.append(svg("line", { class: "grid", x1: L, x2: W - R, y1: y(rank), y2: y(rank) }));
+    s.append(svg("text", { class: "axis", x: L - 5, y: y(rank) + 3, "text-anchor": "end" }, label));
+  }
+  // Break the line where the app wasn't ranked (200+), so a gap reads as "not found", not a drop to 201.
+  let d = "";
+  points.forEach((p, i) => {
+    if (p.rank) d += (i && points[i - 1].rank ? "L" : "M") + x(i).toFixed(1) + " " + y(p.rank).toFixed(1);
+  });
+  if (d) s.append(svg("path", { class: "line", d }));
+  points.forEach((p, i) => {
+    const dot = svg("circle", { class: p.rank ? "dot" : "gap", cx: x(i), cy: y(p.rank ?? 201), r: points.length > 30 ? 1.5 : 2.5 });
+    dot.append(svg("title", {}, p.date + ": " + (p.rank ? "#" + p.rank : "200+")));
+    s.append(dot);
+  });
+  s.append(svg("text", { class: "axis", x: L, y: H - 3 }, points[0].date));
+  if (points.length > 1) s.append(svg("text", { class: "axis", x: W - R, y: H - 3, "text-anchor": "end" }, points[points.length - 1].date));
+  return s;
+}
+
+function history() {
+  const cc = state.country;
+  const charts = tracked.map((k) => {
+    const points = D.history.filter((h) => key(k.keyword, cc) in h.ranks).map((h) => ({ date: h.date, rank: h.ranks[key(k.keyword, cc)] }));
+    if (!points.length) return null;
+    const e = entry(k.keyword, cc);
+    return el("div", { class: "panel chart" }, [
+      el("div", { class: "title" }, [el("span", { class: "kw", text: e ? e.phrase : k.keyword, title: k.keyword }), rankPill(points[points.length - 1].rank)]),
+      rankChart(points),
+    ]);
+  }).filter(Boolean);
+  if (!charts.length) return empty("No history in " + flag(cc) + " " + cc.toUpperCase() + " yet. Run /searchd-track once a day to build it.");
+  const parts = [el("div", { class: "charts" }, charts)];
+  if (D.history.length < 2) parts.push(el("p", { class: "hint", text: "One day of history so far. Run /searchd-track daily (and after listing changes) to see the trend." }));
+  return el("div", {}, parts);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Header, theme toggle, start
+// ---------------------------------------------------------------------------------------------
+const icon = document.getElementById("app-icon");
+if (D.app.icon) icon.src = D.app.icon; else icon.remove();
+document.getElementById("app-name").textContent = D.app.name;
+const updated = D.updatedAt ? new Date(D.updatedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "never";
+document.getElementById("app-sub").textContent = tracked.length + " tracked · " + ideas.length + " ideas · " + D.app.countries.map(flag).join(" ") + " · checked " + updated;
+document.getElementById("footer").textContent = "Built by searchd from Apple's iTunes Search API. Its order can differ slightly from the App Store app. Re-run /searchd-dashboard to refresh.";
+
+// Theme: follows the system until you pick one; your pick is remembered in this browser.
+const root = document.documentElement;
+try { const t = localStorage.getItem("searchd-theme"); if (t) root.dataset.theme = t; } catch {}
+document.getElementById("theme").addEventListener("click", () => {
+  const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("searchd-theme", root.dataset.theme); } catch {}
+});
+
+render();
+</script>
+</body>
+</html>
