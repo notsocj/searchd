@@ -15,6 +15,10 @@ beforeEach(() => {
   process.env.SEARCHD_DIR = mkdtempSync(join(tmpdir(), "searchd-test-"));
 });
 
+// Every child process starts with fetch replaced by one that throws (see helpers/no-network.cjs),
+// so a script that tried to leave the machine would fail the test instead of reaching Apple.
+process.env.NODE_OPTIONS = `--require ${fileURLToPath(new URL("./helpers/no-network.cjs", import.meta.url))}`;
+
 const COUNTRIES = ["us", "gb", "de"];
 const en = { locale: "en-US", countries: ["us"], name: "Brand: Calorie Counter", subtitle: "Macro Tracker", keywords: "nutrition,vitamin,diet" };
 const de = { locale: "de-DE", countries: ["de"], name: "Marke: Kalorienzähler", subtitle: "Makro Tracker", keywords: "ernährung,vitamine" };

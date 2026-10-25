@@ -16,6 +16,10 @@ beforeEach(() => {
   process.env.SEARCHD_DIR = mkdtempSync(join(tmpdir(), "searchd-test-"));
 });
 
+// Every child process starts with fetch replaced by one that throws (see helpers/no-network.cjs),
+// so a script that tried to leave the machine would fail the test instead of reaching Apple.
+process.env.NODE_OPTIONS = `--require ${fileURLToPath(new URL("./helpers/no-network.cjs", import.meta.url))}`;
+
 const script = (skill, file) => fileURLToPath(new URL(`../skills/${skill}/scripts/${file}`, import.meta.url));
 const find = script("searchd-find", "find.js");
 const run = (file, args = [], input = "") => spawnSync(process.execPath, [file, ...args], { input, encoding: "utf8", env: process.env, cwd: process.env.SEARCHD_DIR });
