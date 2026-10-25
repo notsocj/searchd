@@ -33,8 +33,12 @@ const TOP_KEYWORDS = 20;
 // would count some of them as 2 (UTF-16 code units).
 export const charCount = (text) => [...String(text ?? "")].length;
 
+const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
 /** Check one listing. Returns a list of problems (empty = passes). */
 export function checkListing(listing) {
+  // The listing comes from the agent's JSON: "null" or a bare string must be a problem, not a crash.
+  if (!isObject(listing)) return ["a listing must be an object with locale, countries, name, subtitle and keywords"];
   const problems = [];
   const label = listing.locale || "(no locale)";
   for (const field of ["name", "subtitle", "keywords"]) {
@@ -86,15 +90,43 @@ async function data(app) {
   console.log(JSON.stringify({ app: { id: app.id, name: app.name }, countries }, null, 2));
 }
 
-function check(input) {
+/**
+ * Check everything the agent sent, all at once: each listing against Apple's rules (checkListing)
+ * plus what searchd needs to make sense of the set: a locale, and countries that are the user's
+ * own, each in exactly one listing (a country has one App Store language). Returns the problems.
+ */
+export function validateListings(input, appCountries) {
   const listings = input?.listings;
-  if (!Array.isArray(listings) || !listings.length) {
-    console.error('audit.js: expected { "listings": [ … ] }');
-    process.exit(1);
+  if (!Array.isArray(listings) || !listings.length) return ['expected { "listings": [ … ] }'];
+  const problems = [];
+  const locales = new Set();
+  const claimed = new Map(); // country → locale that claimed it first
+  for (const listing of listings) {
+    problems.push(...checkListing(listing));
+    if (!isObject(listing)) continue;
+    const label = listing.locale || "(no locale)";
+    if (typeof listing.locale !== "string" || !listing.locale.trim()) problems.push(`${label}: "locale" is missing (e.g. "en-US")`);
+    else if (locales.has(listing.locale)) problems.push(`${label}: locale appears in two listings (merge them)`);
+    else locales.add(listing.locale);
+
+    if (!Array.isArray(listing.countries) || !listing.countries.length) {
+      problems.push(`${label}: "countries" must be a list of the countries that use this listing, e.g. ["us"]`);
+      continue;
+    }
+    for (const country of listing.countries) {
+      if (!appCountries.includes(country)) problems.push(`${label}: "${country}" isn't one of your countries (${appCountries.join(", ")})`);
+      else if (claimed.has(country) && claimed.get(country) !== listing.locale) problems.push(`${label}: "${country}" is already in the ${claimed.get(country)} listing`);
+      else claimed.set(country, listing.locale);
+    }
   }
-  const problems = listings.flatMap(checkListing);
-  for (const l of listings) {
-    console.log(`\n${l.locale} (${(l.countries ?? []).join(", ").toUpperCase()})`);
+  return problems;
+}
+
+function check(input, app) {
+  const problems = validateListings(input, app.countries);
+  // Show the character counts of every listing we can read, even when something fails to validate.
+  for (const l of (Array.isArray(input?.listings) ? input.listings : []).filter(isObject)) {
+    console.log(`\n${l.locale ?? "(no locale)"} (${(Array.isArray(l.countries) ? l.countries : []).join(", ").toUpperCase()})`);
     for (const field of ["name", "subtitle", "keywords"]) {
       const count = charCount(l[field]);
       console.log(`  ${field.padEnd(9)} ${count <= LIMITS[field] ? "✓" : "✗"} ${String(count).padStart(3)}/${LIMITS[field]}  ${l[field] ?? ""}`);
@@ -104,7 +136,7 @@ function check(input) {
     console.error(`\nNot saved. Fix these:\n- ${problems.join("\n- ")}`);
     process.exit(1);
   }
-  writeJson("audit.json", { createdAt: new Date().toISOString(), listings });
+  writeJson("audit.json", { createdAt: new Date().toISOString(), listings: input.listings });
   console.log("\nAll listings pass. Saved to .searchd/audit.json.");
 }
 
@@ -112,7 +144,7 @@ if (isMain(import.meta.url)) {
   const app = requireApp();
   const command = process.argv[2];
   if (command === "data") await data(app);
-  else if (command === "check") check(await readStdinJson());
+  else if (command === "check") check(await readStdinJson(), app);
   else {
     console.error("Usage: audit.js data | audit.js check  (JSON on stdin)");
     process.exit(1);
