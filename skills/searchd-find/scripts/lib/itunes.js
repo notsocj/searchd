@@ -115,7 +115,9 @@ export function createClient({
     const file = path(...name);
     if (existsSync(file)) {
       try {
-        return JSON.parse(readFileSync(file, "utf8")).results;
+        const { results } = JSON.parse(readFileSync(file, "utf8"));
+        // Valid JSON of the wrong shape ("{}", a hand edit) would crash the scorer later: not a hit.
+        if (Array.isArray(results)) return results;
       } catch {
         // A damaged cache file (e.g. the disk filled up) just means "not cached": fetch it again.
       }
