@@ -11,7 +11,11 @@
 export function normalize(text) {
   // \p{P} = punctuation, \p{S} = symbols (™, ®, emoji…), in every script. We strip them BEFORE
   // NFKC too, because NFKC turns "™" into the letters "TM" ("Counter™" would become "countertm").
-  const strip = (t) => t.replace(/[\p{P}\p{S}]+/gu, " ");
+  // Emoji drag invisible helpers along: a variation selector (U+FE0F in "❤️"), a zero-width joiner
+  // (U+200D in "👨‍👩‍👧") or a keycap mark (U+20E3 in "1️⃣"). They aren't symbols, so each symbol
+  // takes the helpers that follow it; otherwise "❤️" would survive as an invisible "word" that
+  // passes the "keyword is only symbols" check and stops "❤️Love" matching "love".
+  const strip = (t) => t.replace(/(?:[\p{P}\p{S}][︀-️‍⃣]*)+/gu, " ");
   return strip(
     strip(String(text ?? ""))
       // NFKC folds look-alike characters together (full-width "Ａ" → "A", "ﬁ" → "fi").
