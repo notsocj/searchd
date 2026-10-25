@@ -57,6 +57,9 @@ async function resolve(input, country) {
 
 /** Check the JSON the agent sends. It's built from user input, so validate before saving. */
 export function validateSave(input) {
+  // "null", "[]" or a bare string are valid JSON but not what we asked for: report them like any
+  // other problem (appId is missing) instead of crashing on `null.appId`.
+  if (!input || typeof input !== "object" || Array.isArray(input)) input = {};
   const problems = [];
   if (!Number.isInteger(input.appId)) problems.push("appId must be the app's numeric ID");
   const countries = input.countries ?? DEFAULT_COUNTRIES;
@@ -64,14 +67,19 @@ export function validateSave(input) {
     problems.push('countries must be 2-letter lowercase codes, e.g. ["us","de"]');
   }
   const seeds = input.seeds ?? [];
-  if (!Array.isArray(seeds) || !seeds.every((s) => typeof s === "string" && s.trim() && s.length <= 100)) {
-    problems.push("seeds must be a list of keyword strings (each under 100 characters)");
+  // A seed that is only symbols ("🍅") cleans to nothing and would be silently dropped on save, so
+  // it is a problem now, the same way find.js rejects it.
+  if (!Array.isArray(seeds) || !seeds.every((s) => typeof s === "string" && normalize(s) && s.length <= 100)) {
+    problems.push("seeds must be a list of keyword strings (words, not only symbols; each under 100 characters)");
   }
   const competitors = input.competitors ?? [];
   if (!Array.isArray(competitors) || !competitors.every(Number.isInteger)) {
     problems.push("competitors must be a list of numeric app IDs (use `resolve` to find them)");
   }
-  return { problems, countries, seeds, competitors };
+  // A repeated country would be checked (and shown) twice, a repeated competitor listed twice.
+  // Both lists are valid arrays by now, or there's already a problem and they're never used.
+  const unique = (list) => (Array.isArray(list) ? [...new Set(list)] : list);
+  return { problems, countries: unique(countries), seeds, competitors: unique(competitors) };
 }
 
 async function save(input) {
