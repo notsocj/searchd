@@ -50,8 +50,15 @@ export function writeJson(name, data) {
   const file = path(name);
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n");
-  renameSync(tmp, file);
+  try {
+    writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n");
+    renameSync(tmp, file);
+  } catch (error) {
+    // A full disk would otherwise leave a half-written temp file behind on every attempt.
+    // The real file was never touched, so removing the temp file is all the cleanup needed.
+    rmSync(tmp, { force: true });
+    throw error;
+  }
 }
 
 /** The app saved by /searchd-setup. Exits with a clear message if setup hasn't run here. */
@@ -120,7 +127,11 @@ export function acquireLock() {
         process.off("exit", release);
         release();
       };
-    } catch {
+    } catch (error) {
+      // Only "the lock file already exists" means someone holds it. Anything else (a read-only
+      // folder, a full disk) is a real problem: say so, instead of failing on reading a file
+      // that was never created.
+      if (error.code !== "EEXIST") throw error;
       const pid = Number(readFileSync(file, "utf8"));
       if (pid && pid !== process.pid && isAlive(pid)) return null;
       rmSync(file, { force: true }); // stale: its process is gone
