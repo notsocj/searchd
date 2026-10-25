@@ -22,9 +22,11 @@ const show = (rank) => (rank ? `#${rank}` : "200+");
 /** Compare two history snapshots. Returns { up, down }: one printable line per keyword that moved. */
 export function movement(before, after) {
   const lines = { up: [], down: [] };
-  for (const [key, rank] of Object.entries(after.ranks)) {
-    if (!(key in before.ranks)) continue; // first time we checked it: nothing to compare
-    const old = before.ranks[key];
+  // "?? {}": a history file of the wrong shape ("{}", a hand edit) means "nothing to compare".
+  const was = before?.ranks ?? {};
+  for (const [key, rank] of Object.entries(after?.ranks ?? {})) {
+    if (!(key in was)) continue; // first time we checked it: nothing to compare
+    const old = was[key];
     const delta = asNumber(old) - asNumber(rank); // positive = moved up (smaller number)
     if (delta === 0) continue;
     // Split at the LAST "|": country codes never contain one, so this is always right.

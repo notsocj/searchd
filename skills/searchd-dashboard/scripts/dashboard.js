@@ -84,6 +84,9 @@ export function buildData(app, keywords, results, history) {
  * 0 means 200+ (checked, not found), and null means not checked that day.
  */
 export function packHistory(days, current) {
+  // A history file that parses but isn't { date, ranks } ("null", "{}", a hand edit) is skipped,
+  // so one bad day can't stop the whole dashboard from building.
+  days = days.filter((day) => typeof day?.date === "string" && day.ranks && typeof day.ranks === "object");
   const ranks = {};
   days.forEach((day, i) => {
     for (const [key, rank] of Object.entries(day.ranks)) {
