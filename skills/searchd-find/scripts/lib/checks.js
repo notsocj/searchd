@@ -90,9 +90,14 @@ export async function runChecks({ client, app, todo, log = console.log }) {
 
 async function checkAll({ client, app, todo, log }) {
   pruneCache();
-  const results = readJson("results.json", { entries: {} });
+  // readJson only catches invalid JSON. A file that parses but has the wrong shape ("null", "{}",
+  // a hand edit) would make every check below throw, so each one would count as a failed search.
+  const results = readJson("results.json") ?? {};
+  results.entries ??= {};
   const historyFile = `history/${today()}.json`;
-  const history = readJson(historyFile, { date: today(), ranks: {} });
+  const history = readJson(historyFile) ?? {};
+  history.date ??= today();
+  history.ranks ??= {};
 
   // Time estimate: only searches that aren't cached yet cost a throttle wait.
   const uncached = todo.filter((c) => !client.isCached("search", c.phrase, c.country)).length;
