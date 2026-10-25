@@ -17,6 +17,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:">
 <title>searchd</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' width='512' height='512' role='img' aria-label='searchd'%3E%3Crect width='512' height='512' rx='116' fill='%231fc27d'/%3E%3Cg fill='none' stroke='%2304140c' stroke-width='40' stroke-linecap='round'%3E%3Ccircle cx='222' cy='222' r='116'/%3E%3Cpath d='M312 312L402 402'/%3E%3C/g%3E%3Cg fill='%2304140c'%3E%3Crect x='166' y='228' width='30' height='52' rx='9'/%3E%3Crect x='207' y='196' width='30' height='84' rx='9'/%3E%3C/g%3E%3Crect x='248' y='156' width='30' height='124' rx='9' fill='%23fff'/%3E%3C/svg%3E">
 <style>
   @font-face { font-family: "Poppins"; font-weight: 400; font-display: swap; src: url("data:font/woff2;base64,/*FONT_400*/") format("woff2"); }
   @font-face { font-family: "Poppins"; font-weight: 600; font-display: swap; src: url("data:font/woff2;base64,/*FONT_600*/") format("woff2"); }
@@ -81,7 +82,8 @@
 
   /* Sidebar */
   .side { position: sticky; top: 0; height: 100vh; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; padding: 18px 14px 14px; overflow-y: auto; }
-  .brand { font-weight: 600; font-size: 18px; letter-spacing: -0.02em; color: var(--text); padding: 2px 8px 14px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; letter-spacing: -0.02em; color: var(--text); padding: 2px 8px 14px; }
+  .mark { width: 30px; height: 30px; flex: none; }
   .brand b { color: var(--accent); font-weight: 600; }
   .app-card { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 10px; margin-bottom: 12px; min-width: 0; }
   .app-icon { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); flex: none; }
@@ -214,9 +216,8 @@
   @media (max-width: 1000px) {
     :root { --side-w: 68px; }
     .side { padding: 14px 10px; align-items: center; }
-    .brand { font-size: 0; padding: 4px 0 12px; }
-    .brand::before { content: "s"; font-size: 20px; }
-    .brand b, .app-card .meta, .nav-label, .nav-btn .lbl, .run-card, .theme-btn .lbl { display: none; }
+    .brand { padding: 4px 0 12px; }
+    .brand .word, .app-card .meta, .nav-label, .nav-btn .lbl, .run-card, .theme-btn .lbl { display: none; }
     .app-card { padding: 4px; border-radius: 12px; }
     .nav-btn { justify-content: center; padding: 10px; position: relative; width: auto; }
     .nav-btn .count { position: absolute; top: 1px; right: -3px; min-width: 18px; padding: 0 5px; font-size: 10px; }
@@ -253,6 +254,7 @@
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="mark" viewBox="0 0 512 512"><rect width="512" height="512" rx="116" fill="#1fc27d"/><g fill="none" stroke="#04140c" stroke-width="40" stroke-linecap="round"><circle cx="222" cy="222" r="116"/><path d="M312 312L402 402"/></g><g fill="#04140c"><rect x="166" y="228" width="30" height="52" rx="9"/><rect x="207" y="196" width="30" height="84" rx="9"/></g><rect x="248" y="156" width="30" height="124" rx="9" fill="#fff"/></symbol>
   <symbol id="i-board" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></g></symbol>
   <symbol id="i-keywords" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16 16"/></g></symbol>
   <symbol id="i-competitors" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 3-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.7a3 3 0 010 6"/><path d="M18 14.3c2 .7 3.5 2.4 3.5 5.2"/></g></symbol>
@@ -262,7 +264,7 @@
 </svg>
 <div class="app">
   <aside class="side" aria-label="Navigation">
-    <div class="brand">search<b>d</b></div>
+    <div class="brand"><svg class="mark" aria-hidden="true"><use href="#mark"/></svg><span class="word">search<b>d</b></span></div>
     <div class="app-card">
       <img class="app-icon" id="app-icon" alt="">
       <div class="meta"><div class="app-name" id="app-name"></div><div class="app-sub" id="app-sub"></div></div>

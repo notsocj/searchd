@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="searchd">
+  <!-- searchd icon: two colors only. A magnifier with three rising bars in the lens; the tallest is white. -->
+  <rect width="512" height="512" rx="116" fill="#1fc27d"/>
+  <g fill="none" stroke="#04140c" stroke-width="40" stroke-linecap="round">
+    <circle cx="222" cy="222" r="116"/>
+    <path d="M312 312L402 402"/>
+  </g>
+  <g fill="#04140c">
+    <rect x="166" y="228" width="30" height="52" rx="9"/>
+    <rect x="207" y="196" width="30" height="84" rx="9"/>
+  </g>
+  <rect x="248" y="156" width="30" height="124" rx="9" fill="#fff"/>
+</svg>
