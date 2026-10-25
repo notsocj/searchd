@@ -106,8 +106,12 @@ function status(app) {
  * (English-speaking countries would otherwise repeat the same phrase five times).
  */
 export function summary(app, keywords, results, limit = 25) {
+  // --limit comes from the command line: "0", "-3" or "2.5" must not slice from the end or print
+  // "and 0.5 more". Anything that isn't a whole number of 1 or more falls back to the default.
+  limit = Math.floor(limit);
+  if (!(limit >= 1)) limit = 25;
   const rows = keywords.map((k) => {
-    const cells = app.countries.map((c) => results.entries?.[entryKey(k.keyword, c)]).filter(Boolean);
+    const cells = app.countries.map((c) => results?.entries?.[entryKey(k.keyword, c)]).filter(Boolean);
     const best = Math.max(0, ...cells.map((e) => e.opportunity));
     return { k, cells, best };
   });
