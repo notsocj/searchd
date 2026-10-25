@@ -102,7 +102,11 @@ async function save(input) {
   // app's data into .searchd/archive/ (nothing is deleted).
   const previous = readJson("app.json");
   if (previous && previous.id !== app.id) {
-    const archive = path("archive", `${previous.id}-${today()}`);
+    // Switching A → B → A → B on one day would archive app A into the same folder twice: files
+    // would overwrite the first archive and the non-empty "history" folder can't be renamed over.
+    // So a folder that already exists gets "-2", "-3"… and every archive is kept.
+    let archive = path("archive", `${previous.id}-${today()}`);
+    for (let n = 2; existsSync(archive); n++) archive = path("archive", `${previous.id}-${today()}-${n}`);
     mkdirSync(archive, { recursive: true });
     for (const name of ["results.json", "keywords.json", "history", "audit.json"]) {
       if (existsSync(path(name))) renameSync(path(name), `${archive}/${name}`);
