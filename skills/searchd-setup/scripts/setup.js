@@ -16,7 +16,7 @@ import { existsSync, readFileSync, appendFileSync, renameSync, mkdirSync } from 
 import { join } from "node:path";
 import { loadShared } from "./shared.js";
 
-const { readJson, writeJson, readStdinJson, dataDir, path, today, isMain } = await loadShared("lib/store.js");
+const { readJson, writeJson, readStdinJson, dataDir, path, today, isMain, printable } = await loadShared("lib/store.js");
 const { createClient } = await loadShared("lib/itunes.js");
 const { normalize } = await loadShared("lib/score.js");
 
@@ -108,10 +108,12 @@ async function save(input) {
     let archive = path("archive", `${previous.id}-${today()}`);
     for (let n = 2; existsSync(archive); n++) archive = path("archive", `${previous.id}-${today()}-${n}`);
     mkdirSync(archive, { recursive: true });
-    for (const name of ["results.json", "keywords.json", "history", "audit.json"]) {
+    // Everything about the old app goes, including its release logs: the new app must not
+    // inherit "releases" that were really another app's versions.
+    for (const name of ["results.json", "keywords.json", "history", "audit.json", "releases.json", "competitor-releases.json"]) {
       if (existsSync(path(name))) renameSync(path(name), `${archive}/${name}`);
     }
-    console.log(`Switched from ${previous.name} to ${app.name}: the old app's data was moved to ${archive}`);
+    console.log(`Switched from ${printable(previous.name)} to ${printable(app.name)}: the old app's data was moved to ${archive}`);
   }
 
   writeJson("app.json", {
@@ -148,7 +150,7 @@ async function save(input) {
   }
 
   const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  console.log(`Saved ${app.name} (${app.id}), ${count(countries.length, "country", "countries")} (${countries.join(", ")}), ${count(keywords.length, "keyword", "keywords")} → ${dataDir()}`);
+  console.log(`Saved ${printable(app.name)} (${app.id}), ${count(countries.length, "country", "countries")} (${countries.join(", ")}), ${count(keywords.length, "keyword", "keywords")} → ${dataDir()}`);
   if (ignored) console.log("Added .searchd/ to .gitignore.");
   const missing = competitors.filter((id) => !found.some((a) => a.id === id));
   if (missing.length) console.log(`Not found in ${countries[0].toUpperCase()}: competitor ${missing.join(", ")}`);

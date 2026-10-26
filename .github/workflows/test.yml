@@ -1,0 +1,26 @@
+# Runs searchd's tests on every push and pull request. The tests never touch the network
+# (see tests/helpers/no-network.cjs) and there's nothing to install: zero npm dependencies.
+# 18.3.0 is the oldest Node searchd supports (util.parseArgs), so it's tested exactly.
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ["18.3.0", "20", "22", "24"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test

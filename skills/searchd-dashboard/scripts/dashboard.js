@@ -16,8 +16,11 @@ const { SWEET_SPOT } = await loadShared("lib/score.js");
 
 const here = (file) => new URL(file, import.meta.url);
 
-// Only show icons served over https (they come from Apple's CDN). Anything else is dropped.
-const safeIcon = (url) => (typeof url === "string" && url.startsWith("https://") ? url : "");
+// Only show icons from Apple's image servers (https://is1-ssl.mzstatic.com/…, is2, is3…), which is
+// where every App Store icon lives. Anything else is dropped, and the page's CSP allows no other
+// image host either, so a doctored results.json can't make the page load from somewhere else.
+const APPLE_IMAGES = /^https:\/\/[a-z0-9-]+\.mzstatic\.com\//;
+export const safeIcon = (url) => (typeof url === "string" && APPLE_IMAGES.test(url) ? url : "");
 
 /**
  * "Losing to": the apps that rank above you most often.

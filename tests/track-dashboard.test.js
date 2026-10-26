@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { movement, recordRelease, watchCompetitors } from "../skills/searchd-track/scripts/track.js";
-import { losingTo, buildData, packHistory, renderPage, releaseImpact, competitorChanges } from "../skills/searchd-dashboard/scripts/dashboard.js";
+import { losingTo, buildData, packHistory, renderPage, releaseImpact, competitorChanges, safeIcon } from "../skills/searchd-dashboard/scripts/dashboard.js";
 import { today } from "../skills/searchd-find/scripts/lib/store.js";
 
 // ---- movement (track.js) ----
@@ -113,6 +113,14 @@ test("buildData: icons that aren't https are dropped everywhere (own app, compet
   assert.equal(data.app.icon, "");
   assert.equal(data.app.competitors[0].icon, "");
   assert.equal(data.apps[2].icon, "");
+});
+
+test("safeIcon: only Apple's image servers (any isN-ssl.mzstatic.com), nothing that only looks like them", () => {
+  assert.equal(safeIcon("https://is1-ssl.mzstatic.com/image/thumb/x/100x100bb.jpg"), "https://is1-ssl.mzstatic.com/image/thumb/x/100x100bb.jpg");
+  assert.equal(safeIcon("https://is5-ssl.mzstatic.com/a.png"), "https://is5-ssl.mzstatic.com/a.png");
+  for (const bad of ["https://evil.com/a.png", "https://evil.com/is1.mzstatic.com/a.png", "https://is1-ssl.mzstatic.com.evil.com/a.png", "https://mzstatic.com/a.png", "http://is1-ssl.mzstatic.com/a.png", "https://user@evil.com/.mzstatic.com/", "", null, 5]) {
+    assert.equal(safeIcon(bad), "", String(bad));
+  }
 });
 
 test("packHistory: ranks are numbers, 200+ is 0, not-checked is null; lined up with the dates", () => {

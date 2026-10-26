@@ -84,7 +84,7 @@ The split is deliberate: **scripts do everything that must be exact** (API calls
 
 ## Requirements
 
-- [Node.js](https://nodejs.org) **18 or newer**
+- [Node.js](https://nodejs.org) **18.3 or newer**
 - Claude Code or Codex
 
 ## Install
@@ -435,7 +435,8 @@ In `find.js keywords`, `"status": "tracked"` tracks a keyword and `"remove": tru
 
 - searchd only talks to `itunes.apple.com`, Apple's public search API. No key, no account, no telemetry. The dashboard loads app icons from Apple's image servers and nothing else.
 - It never signs in to App Store Connect and never changes or submits your listing. `/searchd-audit` only suggests text; in a fastlane project it can write that text into your local `fastlane/metadata` files (when you say yes) for you to review and upload yourself.
-- App names and descriptions from the App Store are treated as untrusted data: your agent is told never to follow instructions inside them, and the dashboard inserts them as plain text under a strict Content-Security-Policy, so an app name can't inject HTML or scripts.
+- `/searchd-find` reads your project's own files (screen names, UI text, fastlane listing files) to suggest keywords. The scan runs on your machine and searchd sends none of it anywhere; your agent reads the short summary it prints, like any other file it reads for you. Dependency and build folders are skipped.
+- App names and descriptions from the App Store are treated as untrusted data: your agent is told never to follow instructions inside them, and the dashboard inserts them as plain text under a strict Content-Security-Policy, so an app name can't inject HTML or scripts. When a script prints an app name in your terminal, control codes and text-direction tricks are removed first.
 - Zero npm dependencies: only Node.js built-ins, so you can read every line.
 
 ## Coming later
@@ -460,6 +461,7 @@ npm test              # node:test, no dependencies; tests never touch the networ
 ## Credits
 
 - Dashboard font: [Poppins](https://github.com/itfoundry/Poppins) by Indian Type Foundry ([SIL Open Font License 1.1](skills/searchd-dashboard/scripts/fonts/OFL.txt)), embedded so the page loads no fonts from the internet.
+- Dashboard icons: [Solar](https://www.figma.com/community/file/1166831539721848736) (linear set) by 480 Design, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), embedded as inline SVG.
 - Data: Apple's public [iTunes Search API](https://performance-partners.apple.com/search-api). searchd isn't affiliated with or endorsed by Apple.
 
 ## License

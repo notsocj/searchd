@@ -111,15 +111,26 @@ test("save with a different app: the old app's data moves to archive/<id>-<date>
   writeJson("results.json", { entries: { "planner|us": { rank: 1 } } });
   writeJson(`history/${today()}.json`, { date: today(), ranks: { "planner|us": 1 } });
   writeJson("audit.json", { listings: [] });
+  writeJson("releases.json", { releases: [{ version: "1.0" }] });
+  writeJson("competitor-releases.json", { 9: { releases: [] } });
 
   const result = save({ appId: 2, countries: ["us"], seeds: ["timer"] });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Switched from Old App to New App/);
   const archive = dir("archive", `1-${today()}`);
-  assert.deepEqual(readdirSync(archive).sort(), ["audit.json", "history", "keywords.json", "results.json"]);
+  assert.deepEqual(readdirSync(archive).sort(), ["audit.json", "competitor-releases.json", "history", "keywords.json", "releases.json", "results.json"]);
   assert.equal(readJson("app.json").id, 2);
   assert.deepEqual(readJson("keywords.json").map((k) => k.keyword), ["timer"], "the new app starts with only its own seeds");
   assert.ok(!existsSync(dir("results.json")) && !existsSync(dir("history")) && !existsSync(dir("audit.json")));
+  assert.ok(!existsSync(dir("releases.json")) && !existsSync(dir("competitor-releases.json")), "the new app doesn't inherit the old app's releases");
+});
+
+test("save prints app names without terminal control codes or bidi overrides", () => {
+  seed("lookup", "3", "us", [store(3, "Evil\u001b[2J\u202eppA")]);
+  const result = save({ appId: 3, countries: ["us"], seeds: ["timer"] });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^Saved Evil\[2JppA \(3\)/m);
+  assert.ok(!/[\u001b\u202e]/.test(result.stdout));
 });
 
 test("switching apps twice on the same day keeps BOTH archives (nothing is overwritten or half-moved)", () => {

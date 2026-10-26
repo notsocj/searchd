@@ -15,7 +15,7 @@ import { readdirSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { loadShared } from "./shared.js";
 
-const { readJson, writeJson, requireApp, today, path, entryKey, flag, isMain } = await loadShared("lib/store.js");
+const { readJson, writeJson, requireApp, today, path, entryKey, flag, isMain, printable } = await loadShared("lib/store.js");
 const { createClient } = await loadShared("lib/itunes.js");
 const { loadKeywords, planChecks, runChecks, pickCountries } = await loadShared("lib/checks.js");
 
@@ -95,11 +95,11 @@ export function watchCompetitors(watch, competitors, found, now = new Date()) {
     next[c.id] = log;
     if (!added?.changes.length) continue;
     const what = [
-      added.changes.includes("name") ? `renamed from "${added.previousName}" to "${added.name}"` : null,
-      added.changes.includes("version") ? `version ${added.version}` : null,
+      added.changes.includes("name") ? `renamed from "${printable(added.previousName)}" to "${printable(added.name)}"` : null,
+      added.changes.includes("version") ? `version ${printable(added.version)}` : null,
       added.changes.includes("description") ? "new description" : null,
     ].filter(Boolean);
-    lines.push(`${added.name || c.name} (${added.date}): ${what.join(", ")}`);
+    lines.push(`${printable(added.name || c.name)} (${added.date}): ${what.join(", ")}`);
   }
   return { watch: next, lines };
 }
@@ -140,8 +140,8 @@ if (isMain(import.meta.url)) {
       writeJson("releases.json", log);
       const what = added.changes.filter((c) => c !== "version");
       console.log(log.releases.length === 1
-        ? `\nRelease log started at version ${added.version} (released ${added.date}).`
-        : `\nNew release: version ${added.version} (released ${added.date})${what.length ? `, ${what.join(" and ")} changed` : ""}. The dashboard marks it on the History charts.`);
+        ? `\nRelease log started at version ${printable(added.version)} (released ${added.date}).`
+        : `\nNew release: version ${printable(added.version)} (released ${added.date})${what.length ? `, ${what.join(" and ")} changed` : ""}. The dashboard marks it on the History charts.`);
     }
     if (competitors.length) {
       const { watch, lines } = watchCompetitors(readJson("competitor-releases.json"), competitors, found);

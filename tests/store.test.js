@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import {
-  dataDir, path, readJson, writeJson, today, entryKey, flag, isMain, acquireLock,
+  dataDir, path, readJson, writeJson, today, entryKey, flag, isMain, acquireLock, printable,
 } from "../skills/searchd-find/scripts/lib/store.js";
 
 beforeEach(() => {
@@ -169,4 +169,12 @@ test("acquireLock: a real problem (read-only folder) is reported as itself, not 
   } finally {
     chmodSync(process.env.SEARCHD_DIR, 0o755);
   }
+});
+
+test("printable: removes control codes and bidi overrides, keeps everything else", () => {
+  assert.equal(printable("Formula 1®: Live Timing — 日本 🏎️"), "Formula 1®: Live Timing — 日本 🏎️");
+  assert.equal(printable("A\u001b[31mB\u0007C\nD\u009bE"), "A[31mBCDE");
+  assert.equal(printable("evil\u202eppa\u2066x\u2069"), "evilppax");
+  assert.equal(printable(null), "");
+  assert.equal(printable(42), "42");
 });

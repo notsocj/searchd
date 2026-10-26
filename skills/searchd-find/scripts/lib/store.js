@@ -88,6 +88,17 @@ export function flag(country) {
   return [...country.toUpperCase()].map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)).join("");
 }
 
+/**
+ * App Store text made safe to print in a terminal. App names are untrusted: one could hide
+ * terminal control codes (ESC sequences that recolor, move the cursor or rewrite the line) or
+ * bidi overrides (which make text display in a different order than it's stored). Both are
+ * removed, so what you read is what's there. JSON output doesn't need this: JSON.stringify
+ * already escapes control characters.
+ */
+export function printable(text) {
+  return String(text ?? "").replace(/[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g, "");
+}
+
 /** Read all of stdin as JSON (the agent passes data to scripts through a heredoc). */
 export async function readStdinJson() {
   let text = "";
