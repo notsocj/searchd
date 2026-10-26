@@ -72,7 +72,8 @@
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
   .ic { width: 18px; height: 18px; flex: none; display: block; }
   /* Strong ease-out: starts fast so a press feels heard. Used for every transition below. */
-  :root { --ease: cubic-bezier(0.23, 1, 0.32, 1); --side-w: 248px; }
+  /* --ease-in-out is for things that move across the screen (the theme thumb). */
+  :root { --ease: cubic-bezier(0.23, 1, 0.32, 1); --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1); --side-w: 248px; }
   button { transition: background-color 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease), transform 150ms var(--ease); }
   button:active { transform: scale(0.97); }
 
@@ -96,20 +97,36 @@
   .nav-btn .lbl { flex: 1; }
   .nav-btn.is-active { background: var(--accent-soft); color: var(--text); }
   .nav-btn.is-active .ic { color: var(--accent); }
-  .count { font-size: 11px; font-weight: 600; min-width: 22px; text-align: center; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .count { font-size: 11px; font-weight: 600; min-width: 22px; text-align: center; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-variant-numeric: tabular-nums; transition: background-color 150ms var(--ease), color 150ms var(--ease); }
+  .nav-btn .ic { transition: color 150ms var(--ease); }
   .nav-btn.is-active .count { background: var(--accent); color: var(--accent-ink); }
   .side-spacer { flex: 1; min-height: 12px; }
   .run-card { border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); padding: 12px; display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
   .run-card b { color: var(--text); font-weight: 600; }
   .flags { font-size: 15px; letter-spacing: 2px; line-height: 1.5; }
-  .side-foot { display: flex; align-items: center; padding: 8px 2px 0; }
-  .theme-btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 9px; padding: 7px 10px; cursor: pointer; font-size: 13px; }
-  .theme-btn:focus-visible { outline-offset: 0; }
+  .side-foot { padding: 8px 0 0; }
+
+  /* Theme switch: a two-segment control with a thumb that slides to the picked side.
+     The thumb is as wide as one button (50% minus the 3px inset), so translateX(100%) lands it
+     exactly on the second one. JS sets data-on, and adds .ready after the first frame so the
+     thumb doesn't slide on page load. */
+  .theme-switch { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 3px; border: 1px solid var(--line); background: var(--panel); border-radius: 10px; }
+  .theme-switch .thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 7px; background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(0, 0, 0, 0.18); }
+  .theme-switch[data-on="dark"] .thumb { transform: translateX(100%); }
+  .ready .theme-switch .thumb { transition: transform 240ms var(--ease-in-out); }
+  .theme-switch button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; background: transparent; color: var(--faint); padding: 6px 8px; border-radius: 7px; font-size: 13px; cursor: pointer; }
+  .theme-switch button:focus-visible { outline-offset: 0; }
+  .theme-switch button[aria-pressed="true"] { color: var(--text); }
+  .theme-switch button[aria-pressed="true"] .ic { color: var(--accent); }
+  /* The picked icon turns a little as the thumb arrives: the sun a quarter turn (it looks the same, so only the motion reads), the moon a tilt */
+  .theme-switch .ic { width: 16px; height: 16px; transition: transform 320ms var(--ease); }
+  .theme-switch [data-set="light"][aria-pressed="true"] .ic { transform: rotate(90deg); }
+  .theme-switch [data-set="dark"][aria-pressed="true"] .ic { transform: rotate(-15deg); }
 
   /* Hover only where hover exists, so taps on a phone don't leave things stuck highlighted */
   @media (hover: hover) and (pointer: fine) {
     .nav-btn:hover { background: var(--hover); color: var(--text); }
-    .theme-btn:hover { background: var(--hover); color: var(--text); }
+    .theme-switch button:hover { color: var(--text); }
   }
 
   /* Page head: what you're looking at, in plain words */
@@ -210,18 +227,54 @@
   .empty code { background: var(--panel-2); padding: 2px 6px; border-radius: 6px; }
   footer { color: var(--faint); font-size: 12px; margin-top: 28px; max-width: 70ch; }
 
-  @media (prefers-reduced-motion: reduce) { button { transition: none; } button:active { transform: none; } }
+  /* Motion: every view builds itself up. The view is rebuilt on each tab, country or filter
+     change; its frame fades in, then the rows (table rows, competitors, stat cards, charts) rise
+     in one after another. JS gives each row its place in line as --d (see stagger()), and the
+     row's bars fill and its chart draws just after the row lands, so the table fills top to
+     bottom. Nothing waits on this: the content is clickable the whole time. */
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+  @keyframes fill { from { clip-path: inset(0 100% 0 0); } }
+  @keyframes draw { from { stroke-dashoffset: 1; } }
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes pop { from { opacity: 0; transform: scale(0.6); } }
+  #view > * { animation: fade 160ms var(--ease) both; }
+  .rise { animation: rise 280ms var(--d, 0ms) var(--ease) both; }
+  .bar span { animation: fill 420ms calc(var(--d, 0ms) + 120ms) var(--ease) both; }
+  /* pathLength="1" on the line makes one dash exactly the line's length, whatever its shape */
+  .chart .line { stroke-dasharray: 1; animation: draw 600ms calc(var(--d, 0ms) + 160ms) var(--ease) both; }
+  .chart .area { animation: fade 400ms calc(var(--d, 0ms) + 300ms) var(--ease) both; }
+  .chart :is(.dot, .gap) { animation: fade 200ms calc(var(--d, 0ms) + 460ms) var(--ease) both; }
+  .chart .halo { transform-box: fill-box; transform-origin: center; animation: pop 360ms calc(var(--d, 0ms) + 600ms) var(--ease) both; }
+  td { transition: background-color 120ms ease; }
+
+  /* Reduced motion: keep the fades (they help you see what changed), drop everything that moves */
+  @media (prefers-reduced-motion: reduce) {
+    button { transition: none; } button:active { transform: none; }
+    .rise { animation-name: fade; }
+    .bar span, .chart .line, .chart .halo { animation: none; }
+    .ready .theme-switch .thumb, .theme-switch .ic { transition: none; }
+  }
+  /* The theme crossfade (JS, View Transitions): the switches skip it so their thumb slides live,
+     without a ghost of the old one fading out underneath. */
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 220ms; animation-timing-function: var(--ease); }
+  .side .theme-switch { view-transition-name: theme-side; }
+  .topbar .theme-switch { view-transition-name: theme-top; }
+  ::view-transition-old(theme-side), ::view-transition-old(theme-top) { display: none; }
+  ::view-transition-new(theme-side), ::view-transition-new(theme-top) { animation: none; }
 
   /* Tablet: the sidebar shrinks to an icon rail */
   @media (max-width: 1000px) {
     :root { --side-w: 68px; }
     .side { padding: 14px 10px; align-items: center; }
     .brand { padding: 4px 0 12px; }
-    .brand .word, .app-card .meta, .nav-label, .nav-btn .lbl, .run-card, .theme-btn .lbl { display: none; }
+    .brand .word, .app-card .meta, .nav-label, .nav-btn .lbl, .run-card, .theme-switch .lbl { display: none; }
     .app-card { padding: 4px; border-radius: 12px; }
     .nav-btn { justify-content: center; padding: 10px; position: relative; width: auto; }
     .nav-btn .count { position: absolute; top: 1px; right: -3px; min-width: 18px; padding: 0 5px; font-size: 10px; }
-    .theme-btn { padding: 9px; }
+    /* The rail is too narrow for side by side: stack the switch, and slide the thumb down instead */
+    .side .theme-switch { grid-auto-flow: row; }
+    .side .theme-switch .thumb { right: 3px; bottom: auto; width: auto; height: calc(50% - 3px); }
+    .side .theme-switch[data-on="dark"] .thumb { transform: translateY(100%); }
     .wrap { padding: 28px 24px 56px; }
   }
 
@@ -233,6 +286,7 @@
     .topbar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; position: sticky; top: 0; z-index: 5; background: var(--side); border-bottom: 1px solid var(--line); }
     .topbar .app-icon { width: 30px; height: 30px; border-radius: 8px; }
     .topbar .app-name { flex: 1; min-width: 0; -webkit-line-clamp: 1; }
+    .topbar .theme-switch button { padding: 5px 8px; }
     .nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; flex-direction: row; justify-content: space-around; gap: 0; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); background: var(--side); border-top: 1px solid var(--line); }
     .nav-btn { flex-direction: column; gap: 3px; font-size: 11px; padding: 6px 2px; flex: 1; min-width: 0; justify-content: center; align-items: center; }
     .nav-btn .lbl { display: block; flex: none; }
@@ -255,12 +309,14 @@
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="mark" viewBox="0 0 512 512"><rect width="512" height="512" rx="116" fill="#1fc27d"/><g fill="none" stroke="#04140c" stroke-width="40" stroke-linecap="round"><circle cx="222" cy="222" r="116"/><path d="M312 312L402 402"/></g><g fill="#04140c"><rect x="166" y="228" width="30" height="52" rx="9"/><rect x="207" y="196" width="30" height="84" rx="9"/></g><rect x="248" y="156" width="30" height="124" rx="9" fill="#fff"/></symbol>
-  <symbol id="i-board" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></g></symbol>
-  <symbol id="i-keywords" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16 16"/></g></symbol>
-  <symbol id="i-competitors" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 3-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.7a3 3 0 010 6"/><path d="M18 14.3c2 .7 3.5 2.4 3.5 5.2"/></g></symbol>
-  <symbol id="i-ideas" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0012 3z"/></g></symbol>
-  <symbol id="i-history" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-6"/></g></symbol>
-  <symbol id="i-theme" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.6" fill="none"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 010 17z" fill="currentColor"/></g></symbol>
+  <!-- UI icons: Solar "linear" set by 480 Design (https://www.figma.com/community/file/1166831539721848736), CC BY 4.0 -->
+  <symbol id="i-board" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M2.5 6.5C2.5 4.61 2.5 3.67 3.09 3.09C3.67 2.5 4.61 2.5 6.5 2.5C8.39 2.5 9.33 2.5 9.91 3.09C10.5 3.67 10.5 4.61 10.5 6.5C10.5 8.39 10.5 9.33 9.91 9.91C9.33 10.5 8.39 10.5 6.5 10.5C4.61 10.5 3.67 10.5 3.09 9.91C2.5 9.33 2.5 8.39 2.5 6.5Z"/><path d="M13.5 17.5C13.5 15.61 13.5 14.67 14.09 14.09C14.67 13.5 15.61 13.5 17.5 13.5C19.39 13.5 20.33 13.5 20.91 14.09C21.5 14.67 21.5 15.61 21.5 17.5C21.5 19.39 21.5 20.33 20.91 20.91C20.33 21.5 19.39 21.5 17.5 21.5C15.61 21.5 14.67 21.5 14.09 20.91C13.5 20.33 13.5 19.39 13.5 17.5Z"/><path d="M2.5 17.5C2.5 15.61 2.5 14.67 3.09 14.09C3.67 13.5 4.61 13.5 6.5 13.5C8.39 13.5 9.33 13.5 9.91 14.09C10.5 14.67 10.5 15.61 10.5 17.5C10.5 19.39 10.5 20.33 9.91 20.91C9.33 21.5 8.39 21.5 6.5 21.5C4.61 21.5 3.67 21.5 3.09 20.91C2.5 20.33 2.5 19.39 2.5 17.5Z"/><path d="M13.5 6.5C13.5 4.61 13.5 3.67 14.09 3.09C14.67 2.5 15.61 2.5 17.5 2.5C19.39 2.5 20.33 2.5 20.91 3.09C21.5 3.67 21.5 4.61 21.5 6.5C21.5 8.39 21.5 9.33 20.91 9.91C20.33 10.5 19.39 10.5 17.5 10.5C15.61 10.5 14.67 10.5 14.09 9.91C13.5 9.33 13.5 8.39 13.5 6.5Z"/></g></symbol>
+  <symbol id="i-keywords" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><circle cx="11.5" cy="11.5" r="9.5"/><path d="M18.22 18.22L22 22"/></g></symbol>
+  <symbol id="i-competitors" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><circle cx="9" cy="6" r="4"/><path d="M15 9C16.66 9 18 7.66 18 6C18 4.34 16.66 3 15 3"/><ellipse cx="9" cy="17" rx="7" ry="4"/><path d="M18 14C19.75 14.38 21 15.36 21 16.5C21 17.53 19.99 18.42 18.5 18.87"/></g></symbol>
+  <symbol id="i-ideas" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M14.5 19.5H9.5M14.5 19.5C14.5 18.79 14.5 18.43 14.54 18.19C14.66 17.43 14.68 17.38 15.17 16.78C15.32 16.59 15.88 16.09 17 15.09C18.53 13.72 19.5 11.72 19.5 9.5C19.5 5.36 16.14 2 12 2C7.86 2 4.5 5.36 4.5 9.5C4.5 11.72 5.47 13.72 7 15.09C8.12 16.09 8.68 16.59 8.83 16.78C9.32 17.38 9.34 17.43 9.46 18.19C9.5 18.43 9.5 18.79 9.5 19.5M14.5 19.5C14.5 20.43 14.5 20.9 14.3 21.25C14.17 21.48 13.98 21.67 13.75 21.8C13.4 22 12.93 22 12 22C11.07 22 10.6 22 10.25 21.8C10.02 21.67 9.83 21.48 9.7 21.25C9.5 20.9 9.5 20.43 9.5 19.5"/><path stroke-linejoin="round" d="M12.79 8.5L10.64 11.5H13.64L11.5 14.5"/></g></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M2 12C2 7.29 2 4.93 3.46 3.46C4.93 2 7.29 2 12 2C16.71 2 19.07 2 20.54 3.46C22 4.93 22 7.29 22 12C22 16.71 22 19.07 20.54 20.54C19.07 22 16.71 22 12 22C7.29 22 4.93 22 3.46 20.54C2 19.07 2 16.71 2 12Z"/><path stroke-linejoin="round" d="M7 14L9.29 11.71C9.68 11.32 10.32 11.32 10.71 11.71L12.29 13.29C12.68 13.68 13.32 13.68 13.71 13.29L17 10M14.5 10H17V12.5"/></g></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><path d="M12 2V4M12 20V22M4 12H2M22 12H20M19.78 4.22L17.56 6.25M4.22 4.22L6.44 6.25M6.44 17.56L4.22 19.78M19.78 19.78L17.56 17.56"/></g></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 22C17.52 22 22 17.52 22 12C22 11.54 21.31 11.46 21.07 11.86C19.93 13.74 17.86 15 15.5 15C11.91 15 9 12.09 9 8.5C9 6.14 10.26 4.07 12.14 2.93C12.54 2.69 12.46 2 12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22Z"/></symbol>
 </svg>
 <div class="app">
   <aside class="side" aria-label="Navigation">
@@ -273,14 +329,14 @@
     <div class="side-spacer"></div>
     <div class="run-card" id="run-card"></div>
     <div class="side-foot">
-      <button class="theme-btn" type="button" aria-label="Switch dark or light mode"><svg class="ic" aria-hidden="true"><use href="#i-theme"/></svg><span class="lbl">Theme</span></button>
+      <div class="theme-switch" role="group" aria-label="Color theme"><span class="thumb" aria-hidden="true"></span><button type="button" data-set="light" title="Light"><svg class="ic" aria-hidden="true"><use href="#i-sun"/></svg><span class="lbl">Light</span></button><button type="button" data-set="dark" title="Dark"><svg class="ic" aria-hidden="true"><use href="#i-moon"/></svg><span class="lbl">Dark</span></button></div>
     </div>
   </aside>
   <div>
     <div class="topbar">
       <img class="app-icon" id="top-icon" alt="">
       <div class="app-name" id="top-name"></div>
-      <button class="theme-btn" type="button" aria-label="Switch dark or light mode"><svg class="ic" aria-hidden="true"><use href="#i-theme"/></svg></button>
+      <div class="theme-switch" role="group" aria-label="Color theme"><span class="thumb" aria-hidden="true"></span><button type="button" data-set="light" aria-label="Light"><svg class="ic" aria-hidden="true"><use href="#i-sun"/></svg></button><button type="button" data-set="dark" aria-label="Dark"><svg class="ic" aria-hidden="true"><use href="#i-moon"/></svg></button></div>
     </div>
     <div class="wrap">
       <div class="page-head"><h1 id="page-title"></h1><div class="sub" id="page-desc"></div></div>
@@ -364,6 +420,15 @@ function appIcon(app, cls) {
   return el("img", { src: app.icon || null, alt: app.name, title: app.name, loading: "lazy", class: cls, referrerpolicy: "no-referrer" });
 }
 
+/**
+ * Build-up entrance: each row rises 35 ms after the one before. The steps stop growing after
+ * 12 rows, so a long table is fully there in well under a second.
+ */
+function stagger(nodes) {
+  nodes.forEach((n, i) => { n.classList.add("rise"); n.style.setProperty("--d", Math.min(i, 12) * 35 + "ms"); });
+  return nodes;
+}
+
 function empty(message) {
   return el("div", { class: "panel empty", text: message });
 }
@@ -387,28 +452,46 @@ const TABS = [
   { id: "history", label: "History", icon: "history", desc: "How each keyword's rank has moved day to day.", count: () => D.history.dates.length, render: history, countries: true },
 ];
 
+// The nav buttons are built once and only their active state changes, so it can fade between tabs.
+const navButtons = TABS.map((t) => {
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("class", "ic");
+  icon.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", "#i-" + t.icon);
+  icon.append(use);
+  const b = el("button", { class: "nav-btn", type: "button", title: t.label }, [icon, el("span", { class: "lbl", text: t.label }), el("span", { class: "count", text: String(t.count()) })]);
+  b.addEventListener("click", () => { if (state.tab === t.id) return; state.tab = t.id; save(); render(); window.scrollTo(0, 0); });
+  return b;
+});
+document.getElementById("tabs").replaceChildren(...navButtons);
+
+let shownTab = null; // the tab on screen, so render() can tell a tab switch from a country/filter change
+let chips = []; // the toolbar's chips, so a country/filter change only flips which one is pressed
+
 function render() {
   const tab = TABS.find((t) => t.id === state.tab) || TABS[0];
-  document.getElementById("tabs").replaceChildren(...TABS.map((t) => {
-    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    icon.setAttribute("class", "ic");
-    icon.setAttribute("aria-hidden", "true");
-    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-    use.setAttribute("href", "#i-" + t.icon);
-    icon.append(use);
-    const b = el("button", { class: "nav-btn" + (t.id === tab.id ? " is-active" : ""), "aria-current": t.id === tab.id ? "page" : null, type: "button", title: t.label }, [icon, el("span", { class: "lbl", text: t.label }), el("span", { class: "count", text: String(t.count()) })]);
-    b.addEventListener("click", () => { state.tab = t.id; save(); render(); window.scrollTo(0, 0); });
-    return b;
-  }));
+  const newTab = tab.id !== shownTab;
+  shownTab = tab.id;
+  navButtons.forEach((b, i) => {
+    const on = TABS[i] === tab;
+    b.classList.toggle("is-active", on);
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
   document.getElementById("page-title").textContent = tab.label;
   document.getElementById("page-desc").textContent = tab.desc;
-  document.getElementById("toolbar").replaceChildren(...toolbar(tab));
+  // A tab's toolbar never changes, so it's built once per tab; keeping the same chips lets the
+  // pressed color fade from one chip to the next instead of jumping.
+  if (newTab) { chips = []; document.getElementById("toolbar").replaceChildren(...toolbar(tab)); }
+  else for (const c of chips) c.b.setAttribute("aria-pressed", String(c.pressed()));
   document.getElementById("view").replaceChildren(tab.render());
 }
 
+/** A toolbar chip. `pressed` is a function, re-asked on every render. */
 function chip(label, pressed, onClick) {
-  const b = el("button", { class: "chip", type: "button", "aria-pressed": String(pressed), text: label });
-  b.addEventListener("click", onClick);
+  const b = el("button", { class: "chip", type: "button", "aria-pressed": String(pressed()), text: label });
+  b.addEventListener("click", () => { if (!pressed()) onClick(); });
+  chips.push({ b, pressed });
   return b;
 }
 
@@ -416,13 +499,13 @@ function toolbar(tab) {
   const items = [];
   if (tab.id === "board") {
     for (const [id, label] of [["tracked", "Tracked"], ["idea", "Ideas"], ["all", "All"]]) {
-      items.push(chip(label, state.boardFilter === id, () => { state.boardFilter = id; save(); render(); }));
+      items.push(chip(label, () => state.boardFilter === id, () => { state.boardFilter = id; save(); render(); }));
     }
     items.push(el("span", { class: "hint", text: "Hover a rank to see the local phrase searched." }));
   }
   if (tab.countries) {
     for (const cc of D.app.countries) {
-      items.push(chip(flag(cc) + " " + cc.toUpperCase(), state.country === cc, () => { state.country = cc; save(); render(); }));
+      items.push(chip(flag(cc) + " " + cc.toUpperCase(), () => state.country === cc, () => { state.country = cc; save(); render(); }));
     }
   }
   if (tab.id === "ideas") {
@@ -438,14 +521,14 @@ function board() {
   const rows = state.boardFilter === "all" ? D.keywords : D.keywords.filter((k) => k.status === state.boardFilter);
   if (!rows.length) return empty(state.boardFilter === "idea" ? "No ideas yet. Run /searchd-find to brainstorm some." : "No keywords here yet.");
   const head = el("tr", {}, [el("th", { text: "Keyword" }), ...D.app.countries.map((cc) => el("th", { class: "center", text: flag(cc) + " " + cc.toUpperCase() }))]);
-  const body = rows.map((k) => el("tr", {}, [
+  const body = stagger(rows.map((k) => el("tr", {}, [
     el("td", {}, [el("span", { class: "kw", text: k.keyword }), state.boardFilter === "all" ? el("span", { class: "status", text: k.status }) : null]),
     ...D.app.countries.map((cc) => {
       const e = entry(k.keyword, cc);
       if (!e) return el("td", { class: "center" }, el("span", { class: "hint", text: "—", title: "not checked yet" }));
       return el("td", { class: "center", title: flag(cc) + " " + e.phrase }, [rankPill(e.rank), delta(key(k.keyword, cc))]);
     }),
-  ]));
+  ])));
   return el("div", { class: "panel scroll" }, el("table", { class: "board" }, [el("thead", {}, head), el("tbody", {}, body)]));
 }
 
@@ -461,7 +544,7 @@ function keywordTable(list, sortBy) {
   // Rank: best first, 200+ last. Opportunity: highest first.
   rows.sort(sortBy === "rank" ? (a, b) => (a.e.rank ?? 999) - (b.e.rank ?? 999) : (a, b) => b.e.opportunity - a.e.opportunity);
   const head = el("tr", {}, ["Keyword", "Rank", "Volume", "Difficulty", "Opportunity", "Top 5"].map((t, i) => el("th", { class: i === 1 ? "center" : i === 4 ? "num" : "", text: t })));
-  const body = rows.map(({ k, e }) => {
+  const body = stagger(rows.map(({ k, e }) => {
     const sweet = isSweet(e);
     return el("tr", { class: sweet && list === ideas ? "sweet" : "" }, [
       el("td", {}, [
@@ -474,7 +557,7 @@ function keywordTable(list, sortBy) {
       el("td", { class: "num", text: String(e.opportunity) }),
       el("td", {}, el("div", { class: "icons" }, e.top.map((id) => appIcon(D.apps[id] || {}, id === D.app.id ? "me" : "")))),
     ]);
-  });
+  }));
   const hint = el("p", { class: "hint", text: "Volume is a demand estimate from how many top-50 apps target the phrase, not a real search count. Difficulty comes from the top 10 apps' rating counts." });
   return el("div", {}, [el("div", { class: "panel scroll" }, el("table", {}, [el("thead", {}, head), el("tbody", {}, body)])), hint]);
 }
@@ -489,7 +572,7 @@ function competitors() {
   parts.push(el("h2", { text: "Losing to" }));
   if (!D.losingTo.length) parts.push(empty("Nobody ranks above you in any check. Nice."));
   else {
-    parts.push(el("ul", { class: "panel list" }, D.losingTo.map((a, i) => el("li", {}, [
+    parts.push(el("ul", { class: "panel list" }, stagger(D.losingTo.map((a, i) => el("li", {}, [
       el("span", { class: "pos", text: String(i + 1) }),
       appIcon(a),
       el("div", {}, [
@@ -497,7 +580,7 @@ function competitors() {
         el("div", { class: "sub", text: fmt.format(a.ratings) + " ratings · average position #" + a.avgPosition }),
       ]),
       el("div", { class: "beats" }, [el("b", { text: String(a.beats) }), el("div", { class: "sub", text: "of " + total + " checks" })]),
-    ]))));
+    ])))));
     parts.push(el("p", { class: "hint", text: "Counts every keyword × country where the app is in the top 10 and ranks above you (all countries)." }));
   }
 
@@ -505,11 +588,11 @@ function competitors() {
     const cc = state.country;
     parts.push(el("h2", { text: "Head to head · " + flag(cc) + " " + cc.toUpperCase() }));
     const head = el("tr", {}, [el("th", { text: "Keyword" }), el("th", { class: "center", text: "You" }), ...D.app.competitors.map((c) => el("th", { class: "center" }, el("div", { class: "icons" }, [appIcon(c), el("span", { text: c.name.split(/[:\-–]/)[0].trim() })])))]);
-    const rows = D.keywords.map((k) => entry(k.keyword, cc)).filter(Boolean).map((e) => el("tr", {}, [
+    const rows = stagger(D.keywords.map((k) => entry(k.keyword, cc)).filter(Boolean).map((e) => el("tr", {}, [
       el("td", {}, el("span", { class: "kw", text: e.phrase })),
       el("td", { class: "center" }, rankPill(e.rank)),
       ...D.app.competitors.map((c) => el("td", { class: "center" }, rankPill(e.competitors?.[c.id] ?? null))),
-    ]));
+    ])));
     parts.push(rows.length ? el("div", { class: "panel scroll" }, el("table", {}, [el("thead", {}, head), el("tbody", {}, rows)])) : empty("Nothing checked in this country yet."));
   }
   return el("div", {}, parts);
@@ -552,7 +635,7 @@ function rankChart(points) {
     const first = pts[0].split(" ")[0], last = pts[pts.length - 1].split(" ")[0];
     s.append(svg("path", { class: "area", d: "M" + pts.join("L") + "L" + last + " " + base + "L" + first + " " + base + "Z" }));
   }
-  if (d) s.append(svg("path", { class: "line", d }));
+  if (d) s.append(svg("path", { class: "line", d, pathLength: 1 }));
   points.forEach((p, i) => {
     // The newest point gets a halo, so a single day of data still reads as "you are here".
     if (i === points.length - 1 && p.rank) s.append(svg("circle", { class: "halo", cx: x(i), cy: y(p.rank), r: 7 }));
@@ -572,11 +655,11 @@ function history() {
   const now = (r) => r.series[r.series.length - 1].rank;
   const change = (r) => (r.series.length < 2 ? 0 : (r.series[0].rank ?? 201) - (now(r) ?? 201)); // + = moved up
   const stat = (n, label) => el("div", { class: "panel stat" }, [el("b", { text: String(n) }), el("span", { text: label })]);
-  const summary = el("div", { class: "stats" }, [
+  const summary = el("div", { class: "stats" }, stagger([
     stat(rows.filter((r) => now(r) && now(r) <= 10).length, "in the top 10"),
     stat(rows.filter((r) => change(r) > 0).length, "moved up"),
     stat(rows.filter((r) => change(r) < 0).length, "moved down"),
-  ]);
+  ]));
   const charts = rows.map((r) => {
     const ranked = r.series.filter((p) => p.rank).map((p) => p.rank);
     const c = change(r);
@@ -590,7 +673,7 @@ function history() {
       ]),
     ]);
   });
-  const parts = [summary, el("div", { class: "charts" }, charts)];
+  const parts = [summary, el("div", { class: "charts" }, stagger(charts))];
   if (D.history.dates.length < 2) parts.push(el("p", { class: "hint", text: "One day of history so far. Run /searchd-track daily (and after listing changes) to see the trend." }));
   return el("div", {}, parts);
 }
@@ -611,14 +694,31 @@ document.getElementById("footer").textContent = "Built by searchd from Apple's i
 
 // Theme: follows the system until you pick one; your pick is remembered in this browser.
 const root = document.documentElement;
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 try { const t = localStorage.getItem("searchd-theme"); if (t) root.dataset.theme = t; } catch {}
-for (const btn of document.querySelectorAll(".theme-btn")) btn.addEventListener("click", () => {
-  const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  root.dataset.theme = dark ? "light" : "dark";
-  try { localStorage.setItem("searchd-theme", root.dataset.theme); } catch {}
+const currentTheme = () => (root.dataset.theme || (systemDark.matches ? "dark" : "light"));
+
+/** Point both switches (sidebar and phone top bar) at the theme in use. */
+function syncThemeSwitches() {
+  for (const sw of document.querySelectorAll(".theme-switch")) {
+    sw.dataset.on = currentTheme();
+    for (const b of sw.querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.set === sw.dataset.on));
+  }
+}
+for (const btn of document.querySelectorAll(".theme-switch button")) btn.addEventListener("click", () => {
+  if (btn.dataset.set === currentTheme()) return;
+  const apply = () => { root.dataset.theme = btn.dataset.set; syncThemeSwitches(); };
+  // Crossfade the whole page where the browser can (View Transitions); otherwise switch at once.
+  if (document.startViewTransition && !reduceMotion.matches) document.startViewTransition(apply); else apply();
+  try { localStorage.setItem("searchd-theme", btn.dataset.set); } catch {}
 });
+systemDark.addEventListener("change", syncThemeSwitches);
+syncThemeSwitches();
 
 render();
+// Turn on the switch's slide only after the first frame, so it doesn't animate into place on load.
+requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add("ready")));
 </script>
 </body>
 </html>
