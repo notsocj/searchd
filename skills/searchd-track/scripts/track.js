@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // track.js — re-checks every TRACKED keyword in every country, adds today's ranks to the
 // history, and prints what moved since the last earlier day in the history. It also looks up
-// your app once and notes a new release (version, name or description change) in
-// .searchd/releases.json, so the dashboard can show which release moved which keyword.
+// your app and your competitors (one call) and notes every new version, name or description:
+// yours in .searchd/releases.json, theirs in .searchd/competitor-releases.json. The dashboard
+// marks both on the rank charts, so you can see which change moved which keyword.
 //
 //   node track.js [--countries "us,de"]
 //
@@ -73,8 +74,34 @@ export function recordRelease(log, current, now = new Date()) {
     date: today(Number.isNaN(released.getTime()) ? now : released),
     notes: String(current.notes ?? "").slice(0, MAX_NOTES),
     changes,
+    // A rename is the change people care about most: keep the old name to show "renamed from …".
+    ...(changes.includes("name") ? { previousName: last.name } : {}),
   };
   return { log: { releases: [...releases, added] }, added };
+}
+
+/**
+ * The same release log, kept per competitor: `watch` is competitor-releases.json
+ * ({ "<app id>": { releases: [...] } }), `found` maps app id → today's lookup result.
+ * Returns { watch, lines }: the updated logs (only for competitors still in setup) and one
+ * printable line per competitor whose listing changed. The first lookup of a competitor is just
+ * its starting point, so it prints nothing.
+ */
+export function watchCompetitors(watch, competitors, found, now = new Date()) {
+  const next = {};
+  const lines = [];
+  for (const c of competitors ?? []) {
+    const { log, added } = recordRelease(watch?.[c.id], found.get(c.id), now);
+    next[c.id] = log;
+    if (!added?.changes.length) continue;
+    const what = [
+      added.changes.includes("name") ? `renamed from "${added.previousName}" to "${added.name}"` : null,
+      added.changes.includes("version") ? `version ${added.version}` : null,
+      added.changes.includes("description") ? "new description" : null,
+    ].filter(Boolean);
+    lines.push(`${added.name || c.name} (${added.date}): ${what.join(", ")}`);
+  }
+  return { watch: next, lines };
 }
 
 /** The newest history day before today, or null on the first run. */
@@ -103,10 +130,12 @@ if (isMain(import.meta.url)) {
   if (stopped) process.exit(1); // runChecks already said why; don't report movement on half a run
   console.log(`Done: ${done} checked${failed ? `, ${failed} failed (run again to retry them)` : ""}.`);
 
-  // One lookup in your main country (cached for the day) tells us whether a new version is out.
+  // One lookup in your main country (cached for the day), for your app and every competitor at
+  // once, tells us who shipped something new.
   try {
-    const [current] = await client.lookup(app.id, app.countries[0]);
-    const { log, added } = recordRelease(readJson("releases.json"), current);
+    const competitors = app.competitors ?? [];
+    const found = new Map((await client.lookup([app.id, ...competitors.map((c) => c.id)], app.countries[0])).map((a) => [a.id, a]));
+    const { log, added } = recordRelease(readJson("releases.json"), found.get(app.id));
     if (added) {
       writeJson("releases.json", log);
       const what = added.changes.filter((c) => c !== "version");
@@ -114,9 +143,14 @@ if (isMain(import.meta.url)) {
         ? `\nRelease log started at version ${added.version} (released ${added.date}).`
         : `\nNew release: version ${added.version} (released ${added.date})${what.length ? `, ${what.join(" and ")} changed` : ""}. The dashboard marks it on the History charts.`);
     }
+    if (competitors.length) {
+      const { watch, lines } = watchCompetitors(readJson("competitor-releases.json"), competitors, found);
+      writeJson("competitor-releases.json", watch);
+      if (lines.length) console.log(`\nCompetitor listing changes:\n${lines.map((l) => `  ${l}`).join("\n")}`);
+    }
   } catch (error) {
     // Ranks are already saved; a missed release check just waits for tomorrow's run.
-    console.log(`\nCouldn't check for a new release (${error.message}).`);
+    console.log(`\nCouldn't check for new releases (${error.message}).`);
   }
 
   const before = previousDay();

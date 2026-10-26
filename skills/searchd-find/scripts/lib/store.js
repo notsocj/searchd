@@ -10,6 +10,7 @@
 //   ├── history/           one file per day: { date, ranks: { "keyword|cc": rank } }
 //   ├── cache/<date>/      raw search results, so the same search isn't repeated within a day
 //   ├── releases.json      each version of your app /searchd-track has seen (for release markers)
+//   ├── competitor-releases.json   the same, per competitor from setup
 //   ├── audit.json         the last listing suggestion from /searchd-audit
 //   └── dashboard.html     the generated dashboard
 //

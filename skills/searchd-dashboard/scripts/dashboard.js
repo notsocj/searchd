@@ -50,7 +50,7 @@ export function losingTo(entries, myId, limit = 20) {
  *   a list of IDs. The same big apps show up in almost every search, so repeating their details
  *   (icon URLs are ~190 characters) made a 1,200-check dashboard about 4.8 MB.
  */
-export function buildData(app, keywords, results, history, releases = []) {
+export function buildData(app, keywords, results, history, releases = [], competitorLog = {}) {
   const current = new Map(keywords.flatMap((k) => app.countries.map((c) => [`${k.keyword}|${c}`, true])));
   // Apps have a different name in each country's store. Going through your first (main) country
   // first means each app is named the way it is there, not e.g. by its Brazilian name.
@@ -73,6 +73,7 @@ export function buildData(app, keywords, results, history, releases = []) {
     apps,
     history: packedHistory,
     releases: releaseImpact(packedHistory, releases),
+    competitorChanges: competitorChanges(packedHistory, app.competitors, competitorLog),
     losingTo: losingTo(Object.fromEntries(kept), app.id),
     sweetSpot: SWEET_SPOT,
     updatedAt: results.updatedAt ?? null,
@@ -128,8 +129,25 @@ export function releaseImpact(history, releases) {
         if (before.length && after.length) impact[key] = [average(before), average(after)];
       }
       const changes = Array.isArray(r.changes) ? r.changes.filter((c) => ["version", "name", "description"].includes(c)) : [];
-      return { version: r.version, date: r.date, notes: typeof r.notes === "string" ? r.notes : "", changes, impact };
+      const renamed = changes.includes("name") && typeof r.previousName === "string" && typeof r.name === "string" ? { previousName: r.previousName, name: r.name } : {};
+      return { version: r.version, date: r.date, notes: typeof r.notes === "string" ? r.notes : "", changes, ...renamed, impact };
     });
+}
+
+/**
+ * Your competitors' listing changes (from competitor-releases.json), oldest first, each with
+ * what happened to YOUR ranks the week before vs the week after (releaseImpact). Each competitor's
+ * first entry is only where watching started, not a change, so it's left out. Only competitors
+ * still in setup count. `app` on each change is the competitor's ID (the page has their names).
+ */
+export function competitorChanges(history, competitors, log) {
+  return (competitors ?? [])
+    .flatMap((c) => {
+      const entries = log?.[c.id]?.releases;
+      const changed = Array.isArray(entries) ? entries.filter((r) => Array.isArray(r?.changes) && r.changes.length) : [];
+      return releaseImpact(history, changed).map((r) => ({ ...r, app: c.id }));
+    })
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
 /**
@@ -173,7 +191,7 @@ if (isMain(import.meta.url)) {
   const font = (weight) => readFileSync(here(`fonts/poppins-${weight}.woff2`)).toString("base64");
   const html = renderPage(
     readFileSync(here("dashboard-page.html"), "utf8"),
-    buildData(app, readJson("keywords.json", []), results, loadHistory(), readJson("releases.json", {})?.releases),
+    buildData(app, readJson("keywords.json", []), results, loadHistory(), readJson("releases.json", {})?.releases, readJson("competitor-releases.json", {})),
     { 400: font(400), 600: font(600) }
   );
   const out = path("dashboard.html");

@@ -7,7 +7,7 @@ It tells you:
 - **where your app ranks** for each keyword in each country (🥇🥈🥉 for the top 3)
 - **how much demand** a keyword seems to have, and **how hard** it is to rank for
 - **the natural local phrase** for each keyword in each country ("calorie counter" → "kalorienzähler" in Germany)
-- **which apps beat you** most often
+- **which apps beat you** most often, and **when your competitors change their listing** (a rename, a new description, a new version)
 - **new keyword ideas** worth going after, scored and sorted, including ones found in **your app's own code** (screen names and UI text) that your listing never mentions
 - **a rewritten name, subtitle, and keyword field** for each language, with exact character counts
 - **how your ranks change day by day**, with **each release marked**, so you can see which release moved which keyword
@@ -247,6 +247,15 @@ It also looks up your app once per run and notes a **new release** (a new versio
 New release: version 2.4 (released 2026-10-20), name changed. The dashboard marks it on the History charts.
 ```
 
+The same lookup covers **your competitors** from setup (one call for all of them). When one changes its name, description, or version, it's noted in `.searchd/competitor-releases.json` and printed:
+
+```
+Competitor listing changes:
+  F1 TV: Live Timing (2026-10-24): renamed from "F1 TV" to "F1 TV: Live Timing", version 2.4
+```
+
+Their keyword field is never public, so a keyword-field-only change can't be seen; a new version is the hint.
+
 ### `/searchd-audit`
 
 Suggests a rewritten listing **for each App Store language** your countries use (en-US, en-GB, de-DE, fr-FR, ja, es-ES, pt-BR…):
@@ -282,9 +291,9 @@ A single HTML file with your data baked in: it opens straight from your disk wit
 |---|---|
 | **Board** | Every keyword × country rank in one grid: 🥇🥈🥉, then colored pills for top 10, top 50, and top 200; ▲▼ change since the previous check. Hover a rank to see the local phrase. Filter: Tracked / Ideas / All. |
 | **Keywords** | One country at a time: local phrase (with the English keyword under it), rank, volume and difficulty bars, opportunity, and the top 5 apps' icons (yours is outlined). |
-| **Competitors** | **Losing to:** the apps that rank above you in the most checks (every top-10 app above you counts as one), with their ratings and average position. **Head to head:** your rank vs. each competitor from setup, per keyword. |
+| **Competitors** | **Losing to:** the apps that rank above you in the most checks (every top-10 app above you counts as one), with their ratings and average position. **Their listing changes:** each competitor rename, new description, or new version `/searchd-track` noticed, with how many of your keywords moved up or down the week after. **Head to head:** your rank vs. each competitor from setup, per keyword. |
 | **Ideas** | Brainstormed keywords, best opportunity first; ⭐ sweet spots are highlighted. |
-| **History** | One small rank-over-time chart per tracked keyword. The scale is logarithmic with #1 at the top, so moving #40 → #20 looks as big as #4 → #2. Gaps mean "not in the top 200". Each release `/searchd-track` noticed is a dashed marker, with the keyword's average rank the week before vs the week after ("Since v2.4: #18 → #9"), and a **Releases** list shows how many keywords moved up or down after each one. |
+| **History** | One small rank-over-time chart per tracked keyword. The scale is logarithmic with #1 at the top, so moving #40 → #20 looks as big as #4 → #2. Gaps mean "not in the top 200". Each release `/searchd-track` noticed is a dashed marker, with the keyword's average rank the week before vs the week after ("Since v2.4: #18 → #9"), and a **Releases** list shows how many keywords moved up or down after each one. Competitors' changes are blue markers (labeled when they changed their name or description). |
 
 It stays small and fast. In a stress test with 120 keywords × 10 countries (1,200 checks) and 90 days of history, the file was 675 KB, it loaded in about 0.3 seconds, and every tab switched in under 30 ms.
 
@@ -370,6 +379,7 @@ Everything is in `.searchd/` inside the folder you run searchd from, as plain JS
 | `history/<date>.json` | that day's ranks: `{ "keyword\|cc": rank }` (null = 200+) |
 | `cache/<date>/` | today's raw search results (older days are deleted automatically) |
 | `releases.json` | each version of your app `/searchd-track` has seen: version, release date, name, whether the description changed, release notes |
+| `competitor-releases.json` | the same, per competitor from setup |
 | `audit.json` | the last listing suggestion that passed the checks |
 | `dashboard.html` | the generated dashboard |
 | `archive/` | data from an app you switched away from |

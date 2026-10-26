@@ -225,6 +225,9 @@
   /* Release markers on the charts, and the release list above them */
   .chart .rel line { stroke: var(--gold); stroke-width: 1; stroke-dasharray: 2 3; }
   .chart .rel text { fill: var(--gold); font-size: 9px; font-weight: 600; font-family: inherit; }
+  /* A competitor's change: blue, so it never reads as one of your own releases */
+  .chart .rel.comp line { stroke: var(--mid); }
+  .chart .rel.comp text { fill: var(--mid); }
   .list.releases li { grid-template-columns: auto minmax(0, 1fr) auto; }
   .releases .ver { font-weight: 600; font-variant-numeric: tabular-nums; background: var(--gold-soft); color: var(--gold); border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
   .releases .notes { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -598,6 +601,13 @@ function competitors() {
   }
 
   if (D.app.competitors.length) {
+    parts.push(el("h2", { text: "Their listing changes · " + flag(state.country) + " " + state.country.toUpperCase() }));
+    parts.push(D.competitorChanges.length
+      ? changeList(state.country)
+      : empty("No changes yet. Each /searchd-track run checks your competitors' name, description and version; changes show up here and as blue markers on your History charts."));
+  }
+
+  if (D.app.competitors.length) {
     const cc = state.country;
     parts.push(el("h2", { text: "Head to head · " + flag(cc) + " " + cc.toUpperCase() }));
     const head = el("tr", {}, [el("th", { text: "Keyword" }), el("th", { class: "center", text: "You" }), ...D.app.competitors.map((c) => el("th", { class: "center" }, el("div", { class: "icons" }, [appIcon(c), el("span", { text: c.name.split(/[:\-–]/)[0].trim() })])))]);
@@ -635,14 +645,27 @@ function rankChart(points) {
     s.append(svg("line", { class: "grid", x1: L, x2: W - R, y1: y(rank), y2: y(rank) }));
     s.append(svg("text", { class: "axis", x: L - 5, y: y(rank) + 3, "text-anchor": "end" }, label));
   }
-  // A dashed marker at each release inside the chart's dates. The x axis is spaced by checked
-  // day, not calendar day, so a release between two checks sits halfway between them.
-  for (const r of D.releases) {
-    if (points.length < 2 || r.date < points[0].date || r.date > points[points.length - 1].date) continue;
-    const j = points.findIndex((p) => p.date >= r.date);
-    const at = x(points[j].date === r.date ? j : j - 0.5);
-    const g = svg("g", { class: "rel" });
-    g.append(svg("title", {}, "v" + r.version + " released " + r.date), svg("line", { x1: at, x2: at, y1: T, y2: H - B }), svg("text", { x: at + 3, y: T + 7 }, "v" + r.version));
+  // A dashed marker at each of your releases (gold) and each competitor change (blue) inside the
+  // chart's dates. The x axis is spaced by checked day, not calendar day, so a change between
+  // two checks sits halfway between them. A competitor's version-only update gets a line but no
+  // label: apps update every few weeks, and a label each time would bury the chart.
+  const markers = [
+    ...D.releases.map((r) => ({ date: r.date, cls: "rel", label: "v" + r.version, title: "v" + r.version + " released " + r.date })),
+    ...D.competitorChanges.map((r) => ({
+      date: r.date,
+      cls: "rel comp",
+      label: r.changes.some((c) => c !== "version") ? shortName(competitorName(r.app)) : "",
+      title: competitorName(r.app) + ": " + changeText(r) + " (" + r.date + ")",
+    })),
+  ];
+  for (const m of markers) {
+    if (points.length < 2 || m.date < points[0].date || m.date > points[points.length - 1].date) continue;
+    const j = points.findIndex((p) => p.date >= m.date);
+    const at = x(points[j].date === m.date ? j : j - 0.5);
+    const g = svg("g", { class: m.cls });
+    g.append(svg("title", {}, m.title), svg("line", { x1: at, x2: at, y1: T, y2: H - B }));
+    // Competitor labels sit one line lower, so they don't collide with yours on the same day.
+    if (m.label) g.append(svg("text", { x: at + 3, y: T + (m.cls === "rel" ? 7 : 17) }, m.label));
     s.append(g);
   }
   // Break the line where the app wasn't ranked (200+), so a gap reads as "not found", not a drop to 201.
@@ -685,18 +708,52 @@ function sinceRelease(k) {
   return el("span", { class: after < before ? "delta up" : after > before ? "delta down" : "", title: "Average rank, the week before vs the week after " + r.date }, ["Since v" + r.version + ": ", el("b", { text: avgRank(before) + " → " + avgRank(after) })]);
 }
 
+const competitorName = (id) => (D.app.competitors.find((c) => c.id === id) || {}).name || "A competitor";
+/** "Formula 1®: Live F1 Timing" → "Formula 1®", short enough for a chart label. */
+const shortName = (name) => name.split(/[:\-–|]/)[0].trim().slice(0, 14);
+const dateLabel = (date) => new Date(date + "T00:00").toLocaleDateString(undefined, { dateStyle: "medium" });
+
+/** What a competitor changed, in words: "renamed “F1 TV” → “F1 TV: Live Timing”, new version 4.2". */
+function changeText(r) {
+  return [
+    r.changes.includes("name") && r.previousName ? "renamed “" + r.previousName + "” → “" + r.name + "”" : null,
+    r.changes.includes("version") ? "new version " + r.version : null,
+    r.changes.includes("description") ? "new description" : null,
+  ].filter(Boolean).join(", ");
+}
+
+/** ▲ / ▼: how many of your keywords in this country ranked better or worse the week after a change. */
+function impactCell(r, cc) {
+  const moves = Object.entries(r.impact).filter(([k]) => k.endsWith("|" + cc)).map(([, [before, after]]) => before - after);
+  return el("div", { class: "beats" }, moves.length
+    ? [el("span", { class: "delta up", text: "▲" + moves.filter((m) => m > 0).length }), el("span", { class: "delta down", text: "▼" + moves.filter((m) => m < 0).length }), el("div", { class: "sub", text: "your keywords, week after vs before" })]
+    : el("div", { class: "sub", text: "needs tracked days before and after it" }));
+}
+
 /** The newest releases, each with how many keywords in this country moved up or down after it. */
 function releaseList(cc) {
   const items = D.releases.slice(-6).reverse().map((r) => {
-    const moves = Object.entries(r.impact).filter(([k]) => k.endsWith("|" + cc)).map(([, [before, after]]) => before - after);
     const changed = r.changes.filter((c) => c !== "version").map((c) => el("span", { class: "tag", text: c + " changed" }));
-    const date = new Date(r.date + "T00:00").toLocaleDateString(undefined, { dateStyle: "medium" });
     return el("li", {}, [
       el("span", { class: "ver", text: "v" + r.version }),
-      el("div", {}, [el("div", { class: "when" }, [el("b", { text: date }), ...changed]), r.notes ? el("div", { class: "sub notes", text: r.notes, title: r.notes }) : null]),
-      el("div", { class: "beats" }, moves.length
-        ? [el("span", { class: "delta up", text: "▲" + moves.filter((m) => m > 0).length }), el("span", { class: "delta down", text: "▼" + moves.filter((m) => m < 0).length }), el("div", { class: "sub", text: "keywords, week after vs before" })]
-        : el("div", { class: "sub", text: "needs tracked days before and after it" })),
+      el("div", {}, [el("div", { class: "when" }, [el("b", { text: dateLabel(r.date) }), ...changed]), r.notes ? el("div", { class: "sub notes", text: r.notes, title: r.notes }) : null]),
+      impactCell(r, cc),
+    ]);
+  });
+  return el("ul", { class: "panel list releases" }, stagger(items));
+}
+
+/** Competitors' newest listing changes: who, what, when, and how your keywords moved after. */
+function changeList(cc) {
+  const items = D.competitorChanges.slice(-10).reverse().map((r) => {
+    const c = D.app.competitors.find((x) => x.id === r.app) || {};
+    return el("li", {}, [
+      appIcon(c),
+      el("div", {}, [
+        el("div", { class: "when" }, [el("b", { class: "name", text: c.name || "A competitor" })]),
+        el("div", { class: "sub", text: dateLabel(r.date) + " · " + changeText(r) }),
+      ]),
+      impactCell(r, cc),
     ]);
   });
   return el("ul", { class: "panel list releases" }, stagger(items));

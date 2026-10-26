@@ -3,8 +3,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { movement, recordRelease } from "../skills/searchd-track/scripts/track.js";
-import { losingTo, buildData, packHistory, renderPage, releaseImpact } from "../skills/searchd-dashboard/scripts/dashboard.js";
+import { movement, recordRelease, watchCompetitors } from "../skills/searchd-track/scripts/track.js";
+import { losingTo, buildData, packHistory, renderPage, releaseImpact, competitorChanges } from "../skills/searchd-dashboard/scripts/dashboard.js";
 import { today } from "../skills/searchd-find/scripts/lib/store.js";
 
 // ---- movement (track.js) ----
@@ -219,4 +219,49 @@ test("buildData: releases go through releaseImpact", () => {
   const data = buildData(mine, [], {}, [], [{ version: "1.0", date: "2026-10-01" }]);
   assert.deepEqual(data.releases, [{ version: "1.0", date: "2026-10-01", notes: "", changes: [], impact: {} }]);
   assert.deepEqual(buildData(mine, [], {}, []).releases, []);
+});
+
+// ---- competitor watch (track.js) and competitor changes (dashboard.js) ----
+
+test("recordRelease: a rename keeps the old name", () => {
+  const { log } = recordRelease(null, lookup(), noon);
+  const { added } = recordRelease(log, lookup({ name: "Gridpeek: F1 Calendar" }), noon);
+  assert.equal(added.previousName, "Gridpeek");
+  assert.equal(recordRelease(log, lookup({ version: "9" }), noon).added.previousName, undefined, "only on a rename");
+});
+
+test("watchCompetitors: the first sighting is silent, later changes print one line each", () => {
+  const rivals = [{ id: 7, name: "F1 TV" }, { id: 8, name: "Race Pal" }];
+  const day1 = new Map([[7, lookup({ name: "F1 TV" })], [8, lookup({ name: "Race Pal", version: "1.0" })]]);
+  let { watch, lines } = watchCompetitors({}, rivals, day1, noon);
+  assert.deepEqual(lines, []);
+  assert.deepEqual(Object.keys(watch), ["7", "8"]);
+
+  const day2 = new Map([[7, lookup({ name: "F1 TV: Live Timing", version: "2.4" })], [8, lookup({ name: "Race Pal", version: "1.0", description: "new" })]]);
+  ({ watch, lines } = watchCompetitors(watch, rivals, day2, noon));
+  const when = today(new Date("2026-10-20T12:00:00Z"));
+  assert.deepEqual(lines, [`F1 TV: Live Timing (${when}): renamed from "F1 TV" to "F1 TV: Live Timing", version 2.4`, `Race Pal (${when}): new description`]);
+  assert.equal(watch[7].releases.length, 2);
+});
+
+test("watchCompetitors: a competitor missing from the lookup or removed from setup", () => {
+  const { watch, lines } = watchCompetitors({ 9: { releases: [{ version: "1" }] } }, [{ id: 7, name: "F1 TV" }], new Map(), noon);
+  assert.deepEqual(lines, []);
+  assert.deepEqual(watch, { 7: { releases: [] } }, "a removed competitor's log is dropped; an unfound one stays empty");
+  assert.deepEqual(watchCompetitors(null, undefined, new Map(), noon), { watch: {}, lines: [] });
+});
+
+test("competitorChanges: real changes only, oldest first, with your rank impact and the app's ID", () => {
+  const history = packed(["2026-10-01", "2026-10-03"], { "a|us": [5, 9] });
+  const log = {
+    7: { releases: [{ version: "1", date: "2026-10-01", changes: [] }, { version: "2", date: "2026-10-02", changes: ["version", "name"], name: "New", previousName: "Old" }] },
+    8: { releases: [{ version: "5", date: "2026-09-30", changes: [] }, { version: "5", date: "2026-09-30", changes: ["description"] }] },
+    99: { releases: [{ version: "1", date: "2026-10-02", changes: ["name"] }] },
+  };
+  const list = competitorChanges(history, [{ id: 7 }, { id: 8 }], log);
+  assert.deepEqual(list.map((r) => [r.app, r.date]), [[8, "2026-09-30"], [7, "2026-10-02"]], "app 99 isn't a competitor anymore");
+  assert.deepEqual(list[1].impact, { "a|us": [5, 9] });
+  assert.deepEqual([list[1].previousName, list[1].name], ["Old", "New"]);
+  assert.deepEqual(competitorChanges(history, undefined, undefined), []);
+  assert.deepEqual(buildData(mine, [], {}, [], [], { 9: log[7] }).competitorChanges.map((r) => r.app), [9], "buildData passes setup's competitors");
 });
