@@ -8,9 +8,9 @@ It tells you:
 - **how much demand** a keyword seems to have, and **how hard** it is to rank for
 - **the natural local phrase** for each keyword in each country ("calorie counter" → "kalorienzähler" in Germany)
 - **which apps beat you** most often
-- **new keyword ideas** worth going after, scored and sorted
+- **new keyword ideas** worth going after, scored and sorted, including ones found in **your app's own code** (screen names and UI text) that your listing never mentions
 - **a rewritten name, subtitle, and keyword field** for each language, with exact character counts
-- **how your ranks change day by day**, so you can see whether a listing change worked
+- **how your ranks change day by day**, with **each release marked**, so you can see which release moved which keyword
 
 Your own AI agent does the thinking (brainstorming, translating, writing the listing). Apple's free search API supplies the data. There's no API key, no account, and no server, and all your data stays in a `.searchd/` folder in your project.
 
@@ -211,16 +211,17 @@ Running it again later updates the countries and competitors and adds new seeds;
 
 The main research command.
 
-1. **Brainstorms 15–25 keyword ideas** from your app's App Store description, your seeds, and anything you add (`/searchd-find focus and study`). Ideas are short phrases people really type, without competitor brand names or filler like "app" and "best".
-2. **Localizes every keyword for every country.** Your agent writes the phrase a native speaker would type, not a word-for-word translation: "to do list" becomes "lista de tarefas" in 🇧🇷 and "やることリスト" in 🇯🇵. English-speaking countries keep English, and countries that search the English term (common in tech and fitness) get the English term. Phrases are cleaned the same way app names are read (lowercase, no emoji or symbols), so what's searched is exactly what's scored.
-3. **Checks everything:** one App Store search per keyword per country, with progress lines:
+1. **Reads your app's code** when you run it in the app's project: screen names (`RaceCalendarView.swift` → "race calendar"), short UI text from your string catalogs, and your fastlane listing files. Features your app really has, but your listing never mentions, make the best keyword ideas.
+2. **Brainstorms 15–25 keyword ideas** from that, your app's App Store description, your seeds, and anything you add (`/searchd-find focus and study`). Ideas are short phrases people really type, without competitor brand names or filler like "app" and "best".
+3. **Localizes every keyword for every country.** Your agent writes the phrase a native speaker would type, not a word-for-word translation: "to do list" becomes "lista de tarefas" in 🇧🇷 and "やることリスト" in 🇯🇵. English-speaking countries keep English, and countries that search the English term (common in tech and fitness) get the English term. Phrases are cleaned the same way app names are read (lowercase, no emoji or symbols), so what's searched is exactly what's scored.
+4. **Checks everything:** one App Store search per keyword per country, with progress lines:
 
    ```
    110 checks (110 new today, about 7 min).
    1/110 · 🇺🇸 daily planner → #1 · vol 54 · diff 72
    ```
 
-4. **Summarizes:** the top 25 keywords by opportunity, each country's rank, volume, difficulty, and ⭐ sweet spots. Your agent tells you your best ranks, the best ideas, the ones to drop, and asks which ideas to track.
+5. **Summarizes:** the top 25 keywords by opportunity, each country's rank, volume, difficulty, and ⭐ sweet spots. Your agent tells you your best ranks, the best ideas, the ones to drop, and asks which ideas to track.
 
 Long runs go to the background (in Claude Code) and can be stopped and resumed at any time.
 
@@ -239,6 +240,12 @@ Top 3 in 5 of 40 checks: 🥇 3 · 🥈 2
 ```
 
 Run it once a day. Ranks wobble on their own, so judge a listing change over 1–2 weeks. Running it twice in one day is free (cached).
+
+It also looks up your app once per run and notes a **new release** (a new version, or a changed name or description) in `.searchd/releases.json`, dated by Apple's release date:
+
+```
+New release: version 2.4 (released 2026-10-20), name changed. The dashboard marks it on the History charts.
+```
 
 ### `/searchd-audit`
 
@@ -259,7 +266,9 @@ de-DE (DE)
 
 It rejects: going over a limit, spaces in the keyword field, empty items (`a,,b`), a word listed twice, and a word that's already in the name or subtitle (a wasted character: Apple already indexes it). Characters are counted the way Apple shows them, so "ä" or an emoji counts as one.
 
-searchd **never touches App Store Connect**. You copy the text in yourself; name and keyword changes go live with your next app version.
+**If your project keeps its listing in fastlane** (`fastlane/metadata/<locale>/name.txt`, `subtitle.txt`, `keywords.txt`), searchd reads it first. That's your real keyword field, which the App Store never shows publicly, so the suggestion starts from what you actually have. When you say yes, `audit.js write` puts the suggestion into those files, only for languages that already have a folder, and your agent shows you the `git diff`. You review it, commit it, and upload it with fastlane yourself.
+
+searchd **never touches App Store Connect**. You copy the text in (or upload the fastlane files) yourself; name and keyword changes go live with your next app version.
 
 ### `/searchd-dashboard`
 
@@ -267,7 +276,7 @@ Builds `.searchd/dashboard.html` and opens it in your browser. See [The dashboar
 
 ## The dashboard
 
-A single HTML file with your data baked in: it opens straight from your disk with no server, and works offline except for app icons, which load from Apple's servers. It follows your system's dark or light mode (the Theme button switches it), and works on a phone. Re-run `/searchd-dashboard` after new checks to refresh it.
+A single HTML file with your data baked in: it opens straight from your disk with no server, and works offline except for app icons, which load from Apple's servers. It follows your system's dark or light mode (the Light/Dark switch changes it), and works on a phone. Re-run `/searchd-dashboard` after new checks to refresh it.
 
 | Tab | What it shows |
 |---|---|
@@ -275,7 +284,7 @@ A single HTML file with your data baked in: it opens straight from your disk wit
 | **Keywords** | One country at a time: local phrase (with the English keyword under it), rank, volume and difficulty bars, opportunity, and the top 5 apps' icons (yours is outlined). |
 | **Competitors** | **Losing to:** the apps that rank above you in the most checks (every top-10 app above you counts as one), with their ratings and average position. **Head to head:** your rank vs. each competitor from setup, per keyword. |
 | **Ideas** | Brainstormed keywords, best opportunity first; ⭐ sweet spots are highlighted. |
-| **History** | One small rank-over-time chart per tracked keyword. The scale is logarithmic with #1 at the top, so moving #40 → #20 looks as big as #4 → #2. Gaps mean "not in the top 200". |
+| **History** | One small rank-over-time chart per tracked keyword. The scale is logarithmic with #1 at the top, so moving #40 → #20 looks as big as #4 → #2. Gaps mean "not in the top 200". Each release `/searchd-track` noticed is a dashed marker, with the keyword's average rank the week before vs the week after ("Since v2.4: #18 → #9"), and a **Releases** list shows how many keywords moved up or down after each one. |
 
 It stays small and fast. In a stress test with 120 keywords × 10 countries (1,200 checks) and 90 days of history, the file was 675 KB, it loaded in about 0.3 seconds, and every tab switched in under 30 ms.
 
@@ -360,6 +369,7 @@ Everything is in `.searchd/` inside the folder you run searchd from, as plain JS
 | `results.json` | the latest check per keyword × country: phrase, rank, volume, difficulty, opportunity, top 10 apps, competitors' ranks |
 | `history/<date>.json` | that day's ranks: `{ "keyword\|cc": rank }` (null = 200+) |
 | `cache/<date>/` | today's raw search results (older days are deleted automatically) |
+| `releases.json` | each version of your app `/searchd-track` has seen: version, release date, name, whether the description changed, release notes |
 | `audit.json` | the last listing suggestion that passed the checks |
 | `dashboard.html` | the generated dashboard |
 | `archive/` | data from an app you switched away from |
@@ -378,10 +388,12 @@ node $SKILLS/searchd-find/scripts/find.js status            # app, countries, ke
 echo '[{"keyword":"daily planner","local":{"us":"daily planner","de":"tagesplaner"}}]' | node $SKILLS/searchd-find/scripts/find.js keywords
 node $SKILLS/searchd-find/scripts/find.js check             # options: --status tracked|idea|all  --keywords "a,b"  --countries "us,de"
 node $SKILLS/searchd-find/scripts/find.js summary           # options: --status …  --limit 50
+node $SKILLS/searchd-find/scripts/find.js project           # screens, UI text and fastlane listing from the current folder
 
 node $SKILLS/searchd-track/scripts/track.js                 # option: --countries "us,de"
 node $SKILLS/searchd-audit/scripts/audit.js data
 node $SKILLS/searchd-audit/scripts/audit.js check < listing.json
+node $SKILLS/searchd-audit/scripts/audit.js write           # saved suggestion → fastlane/metadata (review with git diff)
 node $SKILLS/searchd-dashboard/scripts/dashboard.js         # option: --no-open
 ```
 
@@ -412,7 +424,7 @@ In `find.js keywords`, `"status": "tracked"` tracks a keyword and `"remove": tru
 ## Privacy and safety
 
 - searchd only talks to `itunes.apple.com`, Apple's public search API. No key, no account, no telemetry. The dashboard loads app icons from Apple's image servers and nothing else.
-- It never signs in to App Store Connect and never changes or submits your listing. `/searchd-audit` only suggests text.
+- It never signs in to App Store Connect and never changes or submits your listing. `/searchd-audit` only suggests text; in a fastlane project it can write that text into your local `fastlane/metadata` files (when you say yes) for you to review and upload yourself.
 - App names and descriptions from the App Store are treated as untrusted data: your agent is told never to follow instructions inside them, and the dashboard inserts them as plain text under a strict Content-Security-Policy, so an app name can't inject HTML or scripts.
 - Zero npm dependencies: only Node.js built-ins, so you can read every line.
 

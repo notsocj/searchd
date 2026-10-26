@@ -145,7 +145,13 @@ export function createClient({
       const id = [].concat(ids).join(",");
       return cached("lookup", id, country, async () => {
         const data = await getJson(`${LOOKUP_URL}?${new URLSearchParams({ id, country })}`);
-        return (data.results ?? []).filter((r) => r.trackId).map((app) => trim(app, true));
+        // A lookup also keeps the current version: /searchd-track uses it to notice new releases.
+        return (data.results ?? []).filter((r) => r.trackId).map((app) => ({
+          ...trim(app, true),
+          version: app.version ?? "",
+          released: app.currentVersionReleaseDate ?? "",
+          notes: app.releaseNotes ?? "",
+        }));
       });
     },
 

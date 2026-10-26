@@ -17,12 +17,17 @@
 //   node find.js summary [--status tracked|idea|all] [--limit 25]
 //       A compact table of the latest results, best opportunities first (top 25 by default,
 //       so a big keyword list doesn't flood the agent's context).
+//
+//   node find.js project
+//       JSON for the agent: what the app's own code says it does (screen names, UI text) and
+//       its fastlane listing files, read from the current folder. See lib/project.js.
 
 import { parseArgs } from "node:util";
 import { readJson, writeJson, readStdinJson, requireApp, entryKey, flag, isMain } from "./lib/store.js";
 import { createClient } from "./lib/itunes.js";
 import { loadKeywords, planChecks, runChecks, pickCountries } from "./lib/checks.js";
 import { isSweetSpot, normalize } from "./lib/score.js";
+import { scanProject } from "./lib/project.js";
 
 const STATUSES = ["tracked", "idea"];
 
@@ -164,10 +169,12 @@ if (isMain(import.meta.url)) {
     if (locked) process.exit(1);
     if (!stopped) console.log(`Done: ${done} checked${failed ? `, ${failed} failed (run again to retry them; finished ones are cached)` : ""}.`);
     if (stopped) process.exit(1);
+  } else if (command === "project") {
+    console.log(JSON.stringify(scanProject(), null, 2));
   } else if (command === "summary") {
     console.log(summary(app, selectKeywords(loadKeywords(), values.status), readJson("results.json", { entries: {} }), Number(values.limit) || 25));
   } else {
-    console.error("Usage: find.js status | keywords (JSON on stdin) | check [--status …] [--keywords …] [--countries …] | summary [--status …]");
+    console.error("Usage: find.js status | keywords (JSON on stdin) | check [--status …] [--keywords …] [--countries …] | summary [--status …] | project");
     process.exit(1);
   }
 }

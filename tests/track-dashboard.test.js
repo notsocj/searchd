@@ -3,8 +3,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { movement } from "../skills/searchd-track/scripts/track.js";
-import { losingTo, buildData, packHistory, renderPage } from "../skills/searchd-dashboard/scripts/dashboard.js";
+import { movement, recordRelease } from "../skills/searchd-track/scripts/track.js";
+import { losingTo, buildData, packHistory, renderPage, releaseImpact } from "../skills/searchd-dashboard/scripts/dashboard.js";
+import { today } from "../skills/searchd-find/scripts/lib/store.js";
 
 // ---- movement (track.js) ----
 
@@ -144,4 +145,78 @@ test("renderPage: the data survives a round trip even when app names try to brea
   assert.ok(!body.includes("<"), "no '<' inside the data script");
   assert.deepEqual(JSON.parse(body), evil);
   assert.equal(html.match(/<\/script>/g).length, 1, "only the template's own closing tag");
+});
+
+// ---- recordRelease (track.js) ----
+
+const lookup = (extra = {}) => ({ version: "2.3", released: "2026-10-20T12:00:00Z", name: "Gridpeek", description: "F1 calendar", notes: "Race calendar", ...extra });
+const noon = new Date("2026-10-25T12:00:00");
+
+test("recordRelease: the first lookup starts the log, dated by Apple's release date", () => {
+  const { log, added } = recordRelease(null, lookup(), noon);
+  assert.equal(log.releases.length, 1);
+  assert.deepEqual({ ...added, description: typeof added.description }, { version: "2.3", date: today(new Date("2026-10-20T12:00:00Z")), name: "Gridpeek", description: "string", notes: "Race calendar", changes: [] });
+});
+
+test("recordRelease: the same listing again adds nothing", () => {
+  const first = recordRelease({ releases: [] }, lookup(), noon).log;
+  const { log, added } = recordRelease(first, lookup({ notes: "edited notes don't count" }), noon);
+  assert.equal(added, null);
+  assert.equal(log.releases.length, 1);
+});
+
+test("recordRelease: a new version, name or description is a new entry that says what changed", () => {
+  let { log } = recordRelease(null, lookup(), noon);
+  let added;
+  ({ log, added } = recordRelease(log, lookup({ version: "2.4", name: "Gridpeek: F1 Calendar" }), noon));
+  assert.deepEqual(added.changes, ["version", "name"]);
+  ({ log, added } = recordRelease(log, lookup({ version: "2.4", name: "Gridpeek: F1 Calendar", description: "new text" }), noon));
+  assert.deepEqual(added.changes, ["description"]);
+  assert.deepEqual(log.releases.map((r) => r.version), ["2.3", "2.4", "2.4"]);
+});
+
+test("recordRelease: no version (app not sold there, an old cache file) or a log of the wrong shape", () => {
+  for (const current of [undefined, null, {}, lookup({ version: "" })]) assert.equal(recordRelease(null, current, noon).added, null);
+  assert.equal(recordRelease({ releases: "junk" }, lookup(), noon).log.releases.length, 1, "a broken log starts over");
+});
+
+test("recordRelease: a missing or bad release date falls back to today; long notes are cut", () => {
+  const { added } = recordRelease(null, lookup({ released: "not a date", notes: "x".repeat(900) }), noon);
+  assert.equal(added.date, "2026-10-25");
+  assert.equal(added.notes.length, 500);
+});
+
+// ---- releaseImpact (dashboard.js) ----
+
+const packed = (dates, ranks) => ({ dates, ranks });
+
+test("releaseImpact: average rank the week before vs the week after, leaving out the release day", () => {
+  const dates = ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"];
+  const history = packed(dates, { "a|us": [20, 10, 99, 4, 6], "b|us": [0, 0, 1, 0, 50] });
+  const [r] = releaseImpact(history, [{ version: "2.4", date: "2026-10-03", changes: ["version"], notes: "n" }]);
+  assert.deepEqual(r.impact["a|us"], [15, 5]);
+  assert.deepEqual(r.impact["b|us"], [201, 125.5], "200+ counts as 201");
+  assert.deepEqual([r.version, r.date, r.notes, r.changes], ["2.4", "2026-10-03", "n", ["version"]]);
+});
+
+test("releaseImpact: only up to 7 tracked days on each side, and unchecked days (null) are skipped", () => {
+  const dates = Array.from({ length: 20 }, (_, i) => `2026-10-${String(i + 1).padStart(2, "0")}`);
+  // 9 days at #100 then 1 at #1 before the release on the 10th... only the last 7 before count.
+  const ranks = [100, 100, 100, 100, 100, 100, 100, 100, 1, 50, 2, null, 2, 2, 2, 2, 2, 2, 90, 90];
+  const [r] = releaseImpact(packed(dates, { "k|us": ranks }), [{ version: "3", date: "2026-10-10" }]);
+  assert.deepEqual(r.impact["k|us"], [Math.round(((100 * 6 + 1) / 7) * 10) / 10, Math.round(((2 * 7) / 7) * 10) / 10]);
+});
+
+test("releaseImpact: no history on one side means no number; junk releases are dropped", () => {
+  const history = packed(["2026-10-01", "2026-10-02"], { "a|us": [5, 5] });
+  const [r] = releaseImpact(history, [{ version: "1", date: "2026-10-02" }, { version: 2, date: "2026-10-01" }, { version: "x", date: "yesterday" }, null]);
+  assert.deepEqual(r.impact, {});
+  assert.deepEqual(releaseImpact(history, undefined), []);
+  assert.deepEqual(releaseImpact(history, [{ version: "1", date: "2026-10-01", changes: ["<b>", "name"], notes: 5 }])[0], { version: "1", date: "2026-10-01", notes: "", changes: ["name"], impact: {} });
+});
+
+test("buildData: releases go through releaseImpact", () => {
+  const data = buildData(mine, [], {}, [], [{ version: "1.0", date: "2026-10-01" }]);
+  assert.deepEqual(data.releases, [{ version: "1.0", date: "2026-10-01", notes: "", changes: [], impact: {} }]);
+  assert.deepEqual(buildData(mine, [], {}, []).releases, []);
 });

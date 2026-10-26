@@ -9,6 +9,7 @@
 //   ├── results.json       the latest check for each keyword × country (rank, volume, difficulty, top apps)
 //   ├── history/           one file per day: { date, ranks: { "keyword|cc": rank } }
 //   ├── cache/<date>/      raw search results, so the same search isn't repeated within a day
+//   ├── releases.json      each version of your app /searchd-track has seen (for release markers)
 //   ├── audit.json         the last listing suggestion from /searchd-audit
 //   └── dashboard.html     the generated dashboard
 //

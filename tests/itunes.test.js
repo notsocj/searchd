@@ -259,6 +259,13 @@ test("lookup drops entries without an ID and keeps descriptions", async () => {
   const apps = await client.lookup("3", "us");
   assert.equal(apps.length, 1);
   assert.equal(apps[0].description, "d");
+  assert.deepEqual([apps[0].version, apps[0].released, apps[0].notes], ["", "", ""], "missing version fields are empty strings");
+});
+
+test("lookup keeps the current version, its release date and its notes", async () => {
+  const client = fast(async () => json({ results: [{ trackId: 3, trackName: "C", version: "2.3", currentVersionReleaseDate: "2026-10-20T07:00:00Z", releaseNotes: "Race calendar" }] }));
+  const [app] = await client.lookup(3, "us");
+  assert.deepEqual([app.version, app.released, app.notes], ["2.3", "2026-10-20T07:00:00Z", "Race calendar"]);
 });
 
 test("pruneCache deletes other days' folders and keeps today's; no cache folder is fine", async () => {

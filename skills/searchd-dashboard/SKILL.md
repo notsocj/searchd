@@ -16,5 +16,5 @@ allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/dashboard.js *)
    - **Keywords:** per country, the local phrase, rank, volume, difficulty, opportunity, and the top 5 apps (theirs is outlined).
    - **Competitors:** the apps that beat them in the most checks, and a head-to-head with the competitors from setup.
    - **Ideas:** brainstormed keywords, best opportunity first, with ⭐ sweet spots.
-   - **History:** rank over time per tracked keyword (needs /searchd-track on more than one day).
+   - **History:** rank over time per tracked keyword (needs /searchd-track on more than one day). Each release /searchd-track noticed is a dashed marker on the charts, with the keyword's average rank the week before vs the week after ("Since v2.4: #18 → #9"), and a Releases list with how many keywords moved up or down after each one.
 3. Mention that it's a snapshot: run /searchd-dashboard again after new checks to refresh it. It's a plain local file: no server, nothing uploaded.

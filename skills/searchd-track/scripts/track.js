@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // track.js — re-checks every TRACKED keyword in every country, adds today's ranks to the
-// history, and prints what moved since the last earlier day in the history.
+// history, and prints what moved since the last earlier day in the history. It also looks up
+// your app once and notes a new release (version, name or description change) in
+// .searchd/releases.json, so the dashboard can show which release moved which keyword.
 //
 //   node track.js [--countries "us,de"]
 //
@@ -9,9 +11,10 @@
 
 import { parseArgs } from "node:util";
 import { readdirSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { loadShared } from "./shared.js";
 
-const { readJson, requireApp, today, path, entryKey, flag, isMain } = await loadShared("lib/store.js");
+const { readJson, writeJson, requireApp, today, path, entryKey, flag, isMain } = await loadShared("lib/store.js");
 const { createClient } = await loadShared("lib/itunes.js");
 const { loadKeywords, planChecks, runChecks, pickCountries } = await loadShared("lib/checks.js");
 
@@ -39,6 +42,41 @@ export function movement(before, after) {
   return lines;
 }
 
+// Release notes are only shown as a one-line hint in the dashboard; no need to keep a novel.
+const MAX_NOTES = 500;
+
+/**
+ * Add the app's current listing to the release log when it differs from the last one recorded.
+ * `current` is a lookup result ({ version, released, name, description, notes }); `log` is
+ * releases.json ({ releases: [...] }, oldest first). Returns { log, added } (added = the new
+ * entry, or null). Pure, so it's easy to test.
+ *
+ * A release is dated by Apple's release date for that version (in your local time zone), not
+ * the day we noticed it: if you skip tracking for a week, the marker still lands on the right day.
+ * The description is stored as a short fingerprint: we only need to know THAT it changed.
+ */
+export function recordRelease(log, current, now = new Date()) {
+  const releases = Array.isArray(log?.releases) ? log.releases : []; // wrong shape (hand edit): start over
+  if (typeof current?.version !== "string" || !current.version) return { log: { releases }, added: null };
+  const listing = {
+    version: current.version,
+    name: String(current.name ?? ""),
+    description: createHash("sha1").update(String(current.description ?? "")).digest("hex").slice(0, 12),
+  };
+  const last = releases.at(-1);
+  // What changed since the last entry. The very first entry is the starting point: nothing "changed".
+  const changes = last ? Object.keys(listing).filter((field) => last[field] !== listing[field]) : [];
+  if (last && !changes.length) return { log: { releases }, added: null };
+  const released = new Date(current.released);
+  const added = {
+    ...listing,
+    date: today(Number.isNaN(released.getTime()) ? now : released),
+    notes: String(current.notes ?? "").slice(0, MAX_NOTES),
+    changes,
+  };
+  return { log: { releases: [...releases, added] }, added };
+}
+
 /** The newest history day before today, or null on the first run. */
 function previousDay() {
   const dir = path("history");
@@ -59,10 +97,27 @@ if (isMain(import.meta.url)) {
 
   const { todo, missing } = planChecks(tracked, countries);
   if (missing.length) console.log(`Skipped (no local phrase yet, run /searchd-find to translate): ${missing.join(", ")}`);
-  const { done, failed, stopped, locked } = await runChecks({ client: createClient(), app, todo });
+  const client = createClient();
+  const { done, failed, stopped, locked } = await runChecks({ client, app, todo });
   if (locked) process.exit(1);
   if (stopped) process.exit(1); // runChecks already said why; don't report movement on half a run
   console.log(`Done: ${done} checked${failed ? `, ${failed} failed (run again to retry them)` : ""}.`);
+
+  // One lookup in your main country (cached for the day) tells us whether a new version is out.
+  try {
+    const [current] = await client.lookup(app.id, app.countries[0]);
+    const { log, added } = recordRelease(readJson("releases.json"), current);
+    if (added) {
+      writeJson("releases.json", log);
+      const what = added.changes.filter((c) => c !== "version");
+      console.log(log.releases.length === 1
+        ? `\nRelease log started at version ${added.version} (released ${added.date}).`
+        : `\nNew release: version ${added.version} (released ${added.date})${what.length ? `, ${what.join(" and ")} changed` : ""}. The dashboard marks it on the History charts.`);
+    }
+  } catch (error) {
+    // Ranks are already saved; a missed release check just waits for tomorrow's run.
+    console.log(`\nCouldn't check for a new release (${error.message}).`);
+  }
 
   const before = previousDay();
   const after = readJson(`history/${today()}.json`, { ranks: {} });

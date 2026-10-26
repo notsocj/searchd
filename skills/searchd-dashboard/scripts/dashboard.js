@@ -50,7 +50,7 @@ export function losingTo(entries, myId, limit = 20) {
  *   a list of IDs. The same big apps show up in almost every search, so repeating their details
  *   (icon URLs are ~190 characters) made a 1,200-check dashboard about 4.8 MB.
  */
-export function buildData(app, keywords, results, history) {
+export function buildData(app, keywords, results, history, releases = []) {
   const current = new Map(keywords.flatMap((k) => app.countries.map((c) => [`${k.keyword}|${c}`, true])));
   // Apps have a different name in each country's store. Going through your first (main) country
   // first means each app is named the way it is there, not e.g. by its Brazilian name.
@@ -65,12 +65,14 @@ export function buildData(app, keywords, results, history) {
     const { keyword, country, phrase, rank, volume, difficulty, opportunity, competitors } = e;
     entries[key] = { keyword, country, phrase, rank, volume, difficulty, opportunity, competitors, top: e.top.slice(0, 5).map((t) => t.id) };
   }
+  const packedHistory = packHistory(history, current);
   return {
     app: { id: app.id, name: app.name, icon: safeIcon(app.icon), countries: app.countries, competitors: (app.competitors ?? []).map((c) => ({ ...c, icon: safeIcon(c.icon) })) },
     keywords: keywords.map(({ keyword, status, local }) => ({ keyword, status, local })),
     entries,
     apps,
-    history: packHistory(history, current),
+    history: packedHistory,
+    releases: releaseImpact(packedHistory, releases),
     losingTo: losingTo(Object.fromEntries(kept), app.id),
     sweetSpot: SWEET_SPOT,
     updatedAt: results.updatedAt ?? null,
@@ -96,6 +98,38 @@ export function packHistory(days, current) {
     }
   });
   return { dates: days.map((d) => d.date), ranks };
+}
+
+// How many tracked days on each side of a release we compare. A week evens out the day-to-day
+// wobble of ranks without mixing in last month.
+const IMPACT_DAYS = 7;
+
+/**
+ * Did a release help? For each release in releases.json, and each keyword × country with
+ * history on BOTH sides of it: the average rank over the last 7 tracked days before the release
+ * day and the first 7 after it, as { "keyword|cc": [before, after] } (200+ counts as 201, like
+ * everywhere else). The release day itself is left out: the new version goes live at some point
+ * that day, so its ranks are a mix of old and new.
+ * `history` is packHistory's output. Releases are untrusted (Apple's text): only plain strings
+ * of the expected shape get through.
+ */
+export function releaseImpact(history, releases) {
+  const list = Array.isArray(releases) ? releases : [];
+  const average = (ranks) => Math.round((ranks.reduce((sum, r) => sum + (r || 201), 0) / ranks.length) * 10) / 10;
+  return list
+    .filter((r) => typeof r?.version === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r?.date))
+    .map((r) => {
+      const impact = {};
+      for (const [key, ranks] of Object.entries(history.ranks)) {
+        // Dates are YYYY-MM-DD, so plain string comparison puts them in order.
+        const checked = (side) => ranks.filter((rank, i) => rank !== null && side(history.dates[i]));
+        const before = checked((d) => d < r.date).slice(-IMPACT_DAYS);
+        const after = checked((d) => d > r.date).slice(0, IMPACT_DAYS);
+        if (before.length && after.length) impact[key] = [average(before), average(after)];
+      }
+      const changes = Array.isArray(r.changes) ? r.changes.filter((c) => ["version", "name", "description"].includes(c)) : [];
+      return { version: r.version, date: r.date, notes: typeof r.notes === "string" ? r.notes : "", changes, impact };
+    });
 }
 
 /**
@@ -139,7 +173,7 @@ if (isMain(import.meta.url)) {
   const font = (weight) => readFileSync(here(`fonts/poppins-${weight}.woff2`)).toString("base64");
   const html = renderPage(
     readFileSync(here("dashboard-page.html"), "utf8"),
-    buildData(app, readJson("keywords.json", []), results, loadHistory()),
+    buildData(app, readJson("keywords.json", []), results, loadHistory(), readJson("releases.json", {})?.releases),
     { 400: font(400), 600: font(600) }
   );
   const out = path("dashboard.html");

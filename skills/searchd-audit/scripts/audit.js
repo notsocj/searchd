@@ -11,6 +11,11 @@
 //       Checks every listing against Apple's rules, prints character counts, and saves it to
 //       .searchd/audit.json when everything passes. Nothing is ever sent to Apple.
 //
+//   node audit.js write
+//       For projects that keep their listing in fastlane (fastlane/metadata/<locale>/name.txt,
+//       subtitle.txt, keywords.txt): writes the saved suggestion into those files, so it shows up
+//       as a diff (git diff) you review and upload yourself. Still nothing is sent to Apple.
+//
 // The rules (from App Store Connect):
 //   name      ≤ 30 characters
 //   subtitle  ≤ 30 characters
@@ -20,11 +25,14 @@
 //   No word from the name or subtitle repeated in the keyword field: Apple indexes all three
 //   fields together, so a repeat is a wasted character, not extra weight.
 
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { loadShared } from "./shared.js";
 
 const { readJson, writeJson, readStdinJson, requireApp, entryKey, isMain } = await loadShared("lib/store.js");
 const { createClient } = await loadShared("lib/itunes.js");
 const { normalize, hasPhrase } = await loadShared("lib/score.js");
+const { findMetadataDir, readMetadata, METADATA_FIELDS } = await loadShared("lib/project.js");
 
 export const LIMITS = { name: 30, subtitle: 30, keywords: 100 };
 const TOP_KEYWORDS = 20;
@@ -87,7 +95,74 @@ async function data(app) {
         .slice(0, TOP_KEYWORDS),
     };
   }
-  console.log(JSON.stringify({ app: { id: app.id, name: app.name }, countries }, null, 2));
+  // The listing as it is in the repo, when the project uses fastlane: the real keyword field,
+  // which the App Store never shows publicly.
+  const dir = findMetadataDir();
+  const metadata = dir ? { dir: relative(process.cwd(), dir), locales: readMetadata(dir) } : null;
+  console.log(JSON.stringify({ app: { id: app.id, name: app.name }, countries, metadata }, null, 2));
+}
+
+// "en-US", "ja", "zh-Hans", "es-MX": App Store Connect's locale codes. Anything else (a "/" or
+// "..") could point a write outside the metadata folder, so it's refused.
+const LOCALE = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,4})?$/;
+
+/**
+ * Write saved listings into fastlane's metadata folder, one <locale>/<field>.txt per field.
+ * Only into locale folders that already exist: a new folder would add a whole new language to
+ * the listing the next time fastlane uploads, and that's the user's decision, not a keyword
+ * tweak. audit.json can be hand-edited, so everything is checked again first; on any problem
+ * nothing is written. Returns { problems, written: ["en-US/name.txt", …], unchanged, skipped: [locales] }.
+ */
+export function writeMetadata(dir, listings) {
+  const result = { problems: [], written: [], unchanged: [], skipped: [] };
+  if (!Array.isArray(listings) || !listings.length) {
+    result.problems.push("no saved listing: run audit.js check first");
+    return result;
+  }
+  for (const listing of listings) {
+    result.problems.push(...checkListing(listing));
+    if (isObject(listing) && !LOCALE.test(String(listing.locale))) result.problems.push(`"${listing.locale}" isn't an App Store locale code (like en-US or ja)`);
+  }
+  if (result.problems.length) return result;
+
+  for (const listing of listings) {
+    const folder = join(dir, listing.locale);
+    if (!existsSync(folder)) {
+      result.skipped.push(listing.locale);
+      continue;
+    }
+    for (const field of METADATA_FIELDS) {
+      const file = join(folder, `${field}.txt`);
+      const old = existsSync(file) ? readFileSync(file, "utf8") : null;
+      const name = `${listing.locale}/${field}.txt`;
+      if (old !== null && old.trim() === listing[field]) {
+        result.unchanged.push(name);
+        continue;
+      }
+      // Keep the file's own style: a trailing newline only if it had one (new files get one).
+      writeFileSync(file, listing[field] + (old === null || old.endsWith("\n") ? "\n" : ""));
+      result.written.push(name);
+    }
+  }
+  return result;
+}
+
+function write() {
+  const dir = findMetadataDir();
+  if (!dir) {
+    console.error("No fastlane/metadata folder here. Copy the suggestion into App Store Connect yourself (or run this from the project that has fastlane).");
+    process.exit(1);
+  }
+  const { problems, written, unchanged, skipped } = writeMetadata(dir, readJson("audit.json")?.listings);
+  if (problems.length) {
+    console.error(`Nothing written. Fix these:\n- ${problems.join("\n- ")}`);
+    process.exit(1);
+  }
+  const shown = relative(process.cwd(), dir);
+  for (const file of written) console.log(`updated   ${shown}/${file}`);
+  if (unchanged.length) console.log(`unchanged ${unchanged.length} file${unchanged.length === 1 ? "" : "s"} (already the same text)`);
+  if (skipped.length) console.log(`skipped   ${skipped.join(", ")}: no folder for that language in ${shown} (add the language in App Store Connect first)`);
+  console.log(written.length ? `\nReview it with: git diff -- ${shown}\nNothing was sent to Apple: uploading (fastlane deliver) is up to you.` : "\nNothing to change.");
 }
 
 /**
@@ -145,8 +220,9 @@ if (isMain(import.meta.url)) {
   const command = process.argv[2];
   if (command === "data") await data(app);
   else if (command === "check") check(await readStdinJson(), app);
+  else if (command === "write") write();
   else {
-    console.error("Usage: audit.js data | audit.js check  (JSON on stdin)");
+    console.error("Usage: audit.js data | audit.js check  (JSON on stdin) | audit.js write");
     process.exit(1);
   }
 }

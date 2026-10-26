@@ -22,6 +22,7 @@ allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/track.js *)
    - Any 🥇🥈🥉 top-3 ranks.
    - Keywords it skipped for lack of a local phrase: suggest /searchd-find to translate them.
    - On the first run there's nothing to compare yet: say tomorrow's run will show movement.
-3. Mention that ranks move day to day on their own, so judge a listing change over 1–2 weeks, and that **/searchd-dashboard** shows the History charts.
+   - A **new release** line (e.g. `New release: version 2.4 (released 2026-10-20), name changed`): track.js noticed a new version of their app (or a changed name or description). Say so; from then on the dashboard marks it on every History chart and compares the week before with the week after.
+3. Mention that ranks move day to day on their own, so judge a listing change over 1–2 weeks, and that **/searchd-dashboard** shows the History charts, with each release marked.
 
 If they want this daily without asking, suggest running /searchd-track once a day (for example with their agent's scheduling feature). Each run takes a few minutes and costs nothing.
