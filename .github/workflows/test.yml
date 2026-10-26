@@ -1,6 +1,8 @@
 # Runs searchd's tests on every push and pull request. The tests never touch the network
 # (see tests/helpers/no-network.cjs) and there's nothing to install: zero npm dependencies.
-# 18.3.0 is the oldest Node searchd supports (util.parseArgs), so it's tested exactly.
+# "18" is the newest Node 18 (18.20.x): the oldest version searchd supports. (The scripts only
+# need 18.3 for util.parseArgs, but the tests use node:test's beforeEach, which needs 18.8, so
+# the version we promise is the one CI can actually check.)
 name: test
 
 on:
@@ -16,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        node: ["18.3.0", "20", "22", "24"]
+        node: ["18", "20", "22", "24"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

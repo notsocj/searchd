@@ -84,7 +84,7 @@ The split is deliberate: **scripts do everything that must be exact** (API calls
 
 ## Requirements
 
-- [Node.js](https://nodejs.org) **18.3 or newer**
+- [Node.js](https://nodejs.org) **18.20 or newer** (the newest Node 18, or any later version)
 - Claude Code or Codex
 
 ## Install
