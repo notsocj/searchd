@@ -286,7 +286,7 @@ Builds `.searchd/dashboard.html` and opens it in your browser. See [The dashboar
 
 ## The dashboard
 
-A single HTML file with your data baked in: it opens straight from your disk with no server, and works offline except for app icons, which load from Apple's servers. It follows your system's dark or light mode (the Light/Dark switch changes it), and works on a phone. Re-run `/searchd-dashboard` after new checks to refresh it.
+A single HTML file with your data baked in: it opens straight from your disk with no server, and works offline except for app icons, which load from Apple's servers. Next to your app's name, a small label shows which App Store the ranks come from (iPhone, iPad, or Mac). It follows your system's dark or light mode (the Light/Dark switch changes it), and works on a phone. Re-run `/searchd-dashboard` after new checks to refresh it.
 
 | Tab | What it shows |
 |---|---|
@@ -313,7 +313,7 @@ If most of the top 50 apps put a phrase in their name, many developers decided i
 | The app… | Counts |
 |---|---|
 | has the exact phrase in its name ("Calorie Counter by fatsecret") | 1.0 |
-| has every word in its name, in any order, or the same letters spaced differently ("Kalorien Zähler" for "kalorienzähler") | 0.6 |
+| has every word in its name, in any order, or the same whole words spaced differently ("Kalorien Zähler" for "kalorienzähler") | 0.6 |
 | only mentions all the words in its description | 0.25 |
 
 **Volume = total ÷ 50 × 100.** We always divide by 50, so a search with only 12 results can't score high: few apps at all is itself a sign of a niche search.
@@ -329,6 +329,8 @@ Simple English plurals count as the same word, so "Calories Counter" counts full
 | y → ies after a consonant | diary → diaries, story → stories |
 
 The singular needs 3+ letters (so "has" isn't "ha" and the French "les" isn't "le"), nothing is added after a word that already ends in "s" ("glass" isn't the plural of "glas"), and "news" is never "new". It applies to languages that put spaces between words; Japanese, Chinese, Korean, and Thai keep the plain substring match. The audit's "already in the name or subtitle" check still wants the exact word.
+
+The spacing rule only glues *whole* words: "Kalorien Zähler" counts for "kalorienzähler", but "Daily News" doesn't count for "daily new" ("news" isn't "new" plus nothing) and "MyKalorienzähler" doesn't count for "kalorienzähler". The glued phrase needs 6+ letters and is compared letter for letter, without the plural rule. In Japanese, Chinese, Korean, and Thai it's a plain substring check, since there are no spaces to line words up with.
 
 ### Difficulty (0–100)
 
@@ -430,6 +432,7 @@ In `find.js keywords`, `"status": "tracked"` tracks a keyword and `"remove": tru
 | `Skipped (no local phrase yet …)` | Some keywords aren't translated for some countries. `/searchd-find` fills them in. |
 | `app … isn't on the XX App Store` | Your app isn't sold in the first country you listed. Put a country where it's sold first. |
 | `searchd: install all five skills together` | One skill folder is missing; reinstall with `npx skills add https://github.com/notsocj/searchd --skill`. |
+| `"platform" in …app.json must be iphone, ipad, mac` | `app.json` was edited by hand. Fix the value, or run `/searchd-setup` again and pick the platform. |
 | Everything says 200+ | Check the app ID in `.searchd/app.json`, and that the app is sold in those countries. |
 
 ## Limitations

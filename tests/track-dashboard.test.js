@@ -273,3 +273,19 @@ test("competitorChanges: real changes only, oldest first, with your rank impact 
   assert.deepEqual(competitorChanges(history, undefined, undefined), []);
   assert.deepEqual(buildData(mine, [], {}, [], [], { 9: log[7] }).competitorChanges.map((r) => r.app), [9], "buildData passes setup's competitors");
 });
+
+test("buildData: the app's platform is passed to the page; an app.json without one is iphone", () => {
+  assert.equal(buildData({ ...mine, platform: "ipad" }, [], {}, []).app.platform, "ipad");
+  assert.equal(buildData({ ...mine, platform: "mac" }, [], {}, []).app.platform, "mac");
+  const { platform, ...old } = mine;
+  assert.equal(buildData(old, [], {}, []).app.platform, "iphone");
+});
+
+test("dashboard page: the platform pill sits next to both app names and is filled with textContent only", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../skills/searchd-dashboard/scripts/dashboard-page.html", import.meta.url), "utf8");
+  for (const id of ["app-platform", "top-platform"]) assert.match(page, new RegExp(`<span class="platform" id="${id}">`));
+  assert.match(page, /pill\.textContent = PLATFORM_NAMES\[platformKey\]/);
+  assert.match(page, /Object\.hasOwn\(PLATFORM_NAMES, platformKey\)/, "an unknown value shows no pill, not raw text");
+  assert.doesNotMatch(page, /\.(innerHTML|outerHTML)\b|insertAdjacentHTML/, "the page never inserts HTML");
+});

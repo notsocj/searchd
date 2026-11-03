@@ -13,6 +13,7 @@ import { loadShared } from "./shared.js";
 
 const { readJson, requireApp, path, isMain } = await loadShared("lib/store.js");
 const { SWEET_SPOT } = await loadShared("lib/score.js");
+const { platformOf } = await loadShared("lib/itunes.js");
 
 const here = (file) => new URL(file, import.meta.url);
 
@@ -70,7 +71,8 @@ export function buildData(app, keywords, results, history, releases = [], compet
   }
   const packedHistory = packHistory(history, current);
   return {
-    app: { id: app.id, name: app.name, icon: safeIcon(app.icon), countries: app.countries, competitors: (app.competitors ?? []).map((c) => ({ ...c, icon: safeIcon(c.icon) })) },
+    // platform: "iphone", "ipad" or "mac" (an app.json without one is iphone), shown by the name.
+    app: { id: app.id, name: app.name, platform: platformOf(app), icon: safeIcon(app.icon), countries: app.countries, competitors: (app.competitors ?? []).map((c) => ({ ...c, icon: safeIcon(c.icon) })) },
     keywords: keywords.map(({ keyword, status, local }) => ({ keyword, status, local })),
     entries,
     apps,

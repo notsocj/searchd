@@ -235,3 +235,30 @@ test("opportunityScore: bounds, rounding, and the sweet-spot edges", () => {
   assert.ok(!isSweetSpot(20, 56));
   assert.ok(!isSweetSpot(NaN, 10));
 });
+
+// ---- Spacing rule: whole words only ----
+
+test("sameLettersDifferentSpacing: the glued phrase must be whole words of the text, not part of one", () => {
+  assert.ok(!sameLettersDifferentSpacing("daily news", "daily new"), "'dailynew' is inside 'dailynews', but 'news' isn't 'new'");
+  assert.ok(!sameLettersDifferentSpacing("my kalorienzählers", "kalorienzähler"), "the text's word runs on past the phrase");
+  assert.ok(!sameLettersDifferentSpacing("mykalorienzähler", "kalorienzähler"), "the phrase starts inside a word");
+  assert.ok(!sameLettersDifferentSpacing("best kalorien zählerapp", "kalorienzähler"), "the last word runs on");
+  assert.ok(sameLettersDifferentSpacing("yazio kalorien zähler", "kalorienzähler"), "two words glued");
+  assert.ok(sameLettersDifferentSpacing("kalorienzähler app", "kalorien zähler"), "one word split");
+  assert.ok(sameLettersDifferentSpacing("food log", "foo dlog"), "any split, as long as both ends line up with words");
+  assert.ok(sameLettersDifferentSpacing("x kalo rien zäh ler y", "kalorienzähler"), "many words glued");
+  assert.ok(!sameLettersDifferentSpacing("", "kalorienzähler"));
+});
+
+test("sameLettersDifferentSpacing: Japanese/Chinese/Korean/Thai keep the plain substring check", () => {
+  assert.ok(sameLettersDifferentSpacing("カロリー 計算アプリ", "カロリー計算"), "no word ends to line up with in these scripts");
+  assert.ok(sameLettersDifferentSpacing("가계부 앱 추천", "가계부앱추천"));
+});
+
+test("targetWeight: 'Daily News' gets nothing for 'daily new'; real spacing differences still get 0.6", () => {
+  assert.equal(targetWeight(app("Daily News"), "daily new"), 0);
+  assert.equal(targetWeight(app("Daily News"), "daily news"), 1);
+  assert.equal(targetWeight(app("Yazio: Kalorien Zähler"), "kalorienzähler"), 0.6);
+  assert.equal(targetWeight(app("Kalorienzähler Pro"), "kalorien zähler"), 0.6);
+  assert.equal(targetWeight(app("MyKalorienzähler"), "kalorienzähler"), 0, "no longer a match from inside a word");
+});

@@ -20,21 +20,14 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { path, writeJson, today } from "./store.js";
+import { path, writeJson, today, PLATFORMS, DEFAULT_PLATFORM, isPlatform, platformOf } from "./store.js";
 
 const SEARCH_URL = "https://itunes.apple.com/search";
 const LOOKUP_URL = "https://itunes.apple.com/lookup";
 
-/**
- * The platforms searchd can research, and the iTunes Search API `entity` for each. "iphone" is the
- * default: app.json files saved before platforms existed have no `platform` field, and they were
- * all iPhone searches (entity=software).
- */
-export const PLATFORMS = { iphone: "software", ipad: "iPadSoftware", mac: "macSoftware" };
-export const DEFAULT_PLATFORM = "iphone";
-
-/** The platform an app.json is set up for: its `platform` field, or "iphone" when it has none. */
-export const platformOf = (app) => app?.platform ?? DEFAULT_PLATFORM;
+// The platform list (iphone/ipad/mac → entity) is defined in store.js next to requireApp(), which
+// checks app.json's "platform". Re-exported here so callers can get everything from the client.
+export { PLATFORMS, DEFAULT_PLATFORM, isPlatform, platformOf };
 
 // We keep app descriptions only for the top 50 results: that's all the volume score reads,
 // and descriptions are most of the response's size.
@@ -84,8 +77,9 @@ export function createClient({
 } = {}) {
   // Missing (an app.json from before platforms existed) or null (a hand edit) means iPhone.
   platform ??= DEFAULT_PLATFORM;
-  // Object.hasOwn, not `in`: "constructor" or "toString" must not count as a platform.
-  if (!Object.hasOwn(PLATFORMS, platform)) {
+  // Scripts already stopped a bad app.json value in requireApp(); this guards direct callers.
+  // isPlatform uses Object.hasOwn, so "constructor" or "toString" don't count as a platform.
+  if (!isPlatform(platform)) {
     throw new Error(`searchd: platform must be ${Object.keys(PLATFORMS).join(", ")} (got "${platform}"). Fix it in .searchd/app.json or run /searchd-setup again.`);
   }
   const entity = PLATFORMS[platform];

@@ -98,12 +98,33 @@ export function hasAllWords(text, phrase) {
 
 /**
  * German, Dutch, Swedish… glue words together ("kalorienzähler") while app names often keep them
- * apart ("Kalorien Zähler"), or the other way round. Compare with all spaces removed. We only do
- * this for phrases of 6+ letters, so a short word like "pal" can't match inside "mypal".
+ * apart ("Kalorien Zähler"), or the other way round. So: does the phrase, with its spaces removed,
+ * equal one or more WHOLE words of the text glued together?
+ *   "kalorienzähler" vs "yazio kalorien zähler"  → "kalorien" + "zähler"  ✓
+ *   "kalorien zähler" vs "kalorienzähler"        → "kalorienzähler"       ✓
+ *   "daily new" vs "daily news"                  → "daily" + "news" is "dailynews", not "dailynew" ✗
+ * The whole-word part matters: squashing the text too and searching inside it found "dailynew"
+ * inside "dailynews", so "Daily News" got partial credit for "daily new".
+ * It needs 6+ letters, so short coincidences ("my pal" for "mypal") don't count.
+ * Plurals don't apply here: glued words are compared letter for letter.
+ * Japanese, Chinese, Korean and Thai have no spaces to mark where words end, so for them it stays
+ * a plain substring check of the squashed text.
  */
 export function sameLettersDifferentSpacing(text, phrase) {
   const squashed = phrase.replace(/ /g, "");
-  return squashed.length >= 6 && text.replace(/ /g, "").includes(squashed);
+  if (squashed.length < 6) return false;
+  if (NO_SPACE_SCRIPTS.test(phrase)) return text.replace(/ /g, "").includes(squashed);
+  const words = text.split(" ");
+  for (let start = 0; start < words.length; start++) {
+    // Glue words from `start` onward while they still spell the beginning of the phrase.
+    let glued = "";
+    for (let end = start; end < words.length; end++) {
+      glued += words[end];
+      if (glued === squashed) return true;
+      if (!squashed.startsWith(glued)) break; // went off track: try the next starting word
+    }
+  }
+  return false;
 }
 
 /**
@@ -122,7 +143,7 @@ export function rankOf(results, appId) {
  * "calorie counter". See isPluralOf above.)
  *   1.00  the exact phrase is in the name           ("Calorie Counter by fatsecret")
  *   0.60  every word is in the name, but split up    ("Counter of Calories"), or the same
- *         letters with different spacing ("Kalorien Zähler" for "kalorienzähler")
+ *         whole words with different spacing ("Kalorien Zähler" for "kalorienzähler")
  *   0.25  only the description mentions all the words
  *   0     none of the above (Apple matched it some other way, e.g. the hidden keyword field)
  */
