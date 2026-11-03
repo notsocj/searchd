@@ -27,8 +27,10 @@ const track = script("searchd-track", "track.js");
 const audit = script("searchd-audit", "audit.js");
 const run = (file, args = []) => spawnSync(process.execPath, [file, ...args], { encoding: "utf8", env: process.env, cwd: process.env.SEARCHD_DIR });
 
-function seed(kind, key, country, results) {
-  const hash = createHash("sha1").update(`${kind}:${key}`).digest("hex").slice(0, 16);
+function seed(kind, key, country, results, platform = "iphone") {
+  // iPhone keeps the original key; other platforms put their name first (see cacheName in lib/itunes.js).
+  const id = platform === "iphone" ? `${kind}:${key}` : `${platform}/${kind}:${key}`;
+  const hash = createHash("sha1").update(id).digest("hex").slice(0, 16);
   writeJson(`cache/${today()}/${country}/${hash}.json`, { kind, key, country, results });
 }
 const app = (id, name, ratings = 10, description = "") => ({ id, name, icon: "https://img/x.png", ratings, rating: 4, seller: "S", description });
@@ -153,4 +155,29 @@ test("the no-network guard works: any fetch in a child process fails loudly inst
   // Not through find.js: the real client waits 10 s before retrying a network error.
   const result = spawnSync(process.execPath, ["-e", "fetch('https://itunes.apple.com/search?term=x').catch((e) => console.log(e.message))"], { encoding: "utf8", env: process.env });
   assert.equal(result.stdout.trim(), "network disabled in tests (tried to fetch https://itunes.apple.com/search)");
+});
+
+test("find check and track on an iPad project search the iPad store (its own cache), not the iPhone one", () => {
+  writeJson("app.json", { id: 1, name: "Me", platform: "ipad", countries: ["us"], competitors: [] });
+  writeJson("keywords.json", [{ keyword: "planner", status: "tracked", local: { us: "planner" } }]);
+  // The iPhone cache says #3, the iPad cache says #1. Only the iPad answer may be used.
+  seed("search", "planner", "us", [app(5, "A"), app(6, "B"), app(1, "Me")]);
+  seed("search", "planner", "us", [app(1, "Me")], "ipad");
+  seed("lookup", "1", "us", [app(1, "Me")], "ipad");
+
+  const check = run(find, ["check"]);
+  assert.equal(check.status, 0, check.stderr);
+  assert.equal(readJson("results.json").entries["planner|us"].rank, 1);
+  const tracked = run(track);
+  assert.equal(tracked.status, 0, tracked.stderr);
+  assert.match(tracked.stdout, /Top 3 in 1 of 1 checks: 🥇 1/);
+  assert.equal(JSON.parse(run(find, ["status"]).stdout).app.platform, "ipad");
+});
+
+test("an app.json without a platform (saved by an older searchd) still checks the iPhone store", () => {
+  setupWorld(); // its app.json has no "platform" field, and the cache is seeded under iPhone keys
+  const result = run(find, ["check"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readJson("results.json").entries["planner|us"].rank, 2);
+  assert.equal(JSON.parse(run(find, ["status"]).stdout).app.platform, "iphone");
 });

@@ -24,7 +24,7 @@
 
 import { parseArgs } from "node:util";
 import { readJson, writeJson, readStdinJson, requireApp, entryKey, flag, isMain } from "./lib/store.js";
-import { createClient } from "./lib/itunes.js";
+import { createClient, platformOf } from "./lib/itunes.js";
 import { loadKeywords, planChecks, runChecks, pickCountries } from "./lib/checks.js";
 import { isSweetSpot, normalize } from "./lib/score.js";
 import { scanProject } from "./lib/project.js";
@@ -102,7 +102,8 @@ function status(app) {
     local: k.local,
     missingCountries: app.countries.filter((c) => !k.local?.[c]),
   }));
-  console.log(JSON.stringify({ app: { id: app.id, name: app.name, description: app.description ?? "" }, countries: app.countries, competitors: app.competitors, keywords }, null, 2));
+  // platform: "iphone", "ipad" or "mac", so ideas fit how people search that store.
+  console.log(JSON.stringify({ app: { id: app.id, name: app.name, platform: platformOf(app), description: app.description ?? "" }, countries: app.countries, competitors: app.competitors, keywords }, null, 2));
 }
 
 /**
@@ -165,7 +166,7 @@ if (isMain(import.meta.url)) {
     const countries = pickCountries(app, values.countries);
     const { todo, missing } = planChecks(selectKeywords(loadKeywords(), values.status, values.keywords), countries);
     if (missing.length) console.log(`Skipped (no local phrase yet, add one with \`find.js keywords\`): ${missing.join(", ")}`);
-    const { done, failed, stopped, locked } = await runChecks({ client: createClient(), app, todo });
+    const { done, failed, stopped, locked } = await runChecks({ client: createClient({ platform: app.platform }), app, todo });
     if (locked) process.exit(1);
     if (!stopped) console.log(`Done: ${done} checked${failed ? `, ${failed} failed (run again to retry them; finished ones are cached)` : ""}.`);
     if (stopped) process.exit(1);

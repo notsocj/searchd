@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 // setup.js — finds your app on the App Store and saves what searchd should track.
 //
-//   node setup.js resolve <App Store link | app ID | app name> [--country us]
+//   node setup.js resolve <App Store link | app ID | app name> [--country us] [--platform iphone]
 //       Prints JSON: { matches: [{ id, name, seller, icon, ratings }] }. For a link or an ID
-//       that's your app (one match); for a name it's the top 5 search results to pick from.
+//       that's your app (one match); for a name it's the top 5 search results to pick from, in
+//       that platform's store (iphone, ipad or mac; a link or ID is found on any platform).
 //
 //   node setup.js save <<'EOF'
-//   { "appId": 1145935738, "countries": ["us","de"], "seeds": ["calorie counter"], "competitors": [341232718] }
+//   { "appId": 1145935738, "platform": "iphone", "countries": ["us","de"], "seeds": ["calorie counter"], "competitors": [341232718] }
 //   EOF
 //       Writes .searchd/app.json and adds the seeds to .searchd/keywords.json (as tracked keywords
-//       with no local phrases yet: /searchd-find translates them per country).
+//       with no local phrases yet: /searchd-find translates them per country). "platform" is
+//       optional: left out, it keeps the saved one, or "iphone" for a first setup.
 
 import { parseArgs } from "node:util";
 import { existsSync, readFileSync, appendFileSync, renameSync, mkdirSync } from "node:fs";
@@ -17,10 +19,16 @@ import { join } from "node:path";
 import { loadShared } from "./shared.js";
 
 const { readJson, writeJson, readStdinJson, dataDir, path, today, isMain, printable } = await loadShared("lib/store.js");
-const { createClient } = await loadShared("lib/itunes.js");
+const { createClient, PLATFORMS, platformOf } = await loadShared("lib/itunes.js");
 const { normalize } = await loadShared("lib/score.js");
 
 export const DEFAULT_COUNTRIES = ["us", "gb", "ca", "au", "ph", "de", "fr", "jp", "es", "br"];
+
+// How each platform is named in messages.
+const PLATFORM_NAMES = { iphone: "iPhone", ipad: "iPad", mac: "Mac" };
+
+/** Is this one of the platforms searchd knows? (Object.hasOwn: "constructor" is not a platform.) */
+export const isPlatform = (value) => typeof value === "string" && Object.hasOwn(PLATFORMS, value);
 
 /**
  * Work out what the user gave us. App Store links come in several shapes:
@@ -44,8 +52,8 @@ export function parseAppInput(input) {
 
 const toMatch = ({ id, name, seller, icon, ratings }) => ({ id, name, seller, icon, ratings });
 
-async function resolve(input, country) {
-  const client = createClient();
+async function resolve(input, country, platform) {
+  const client = createClient({ platform });
   const parsed = parseAppInput(input);
   if (parsed.name) {
     const results = await client.search(parsed.name, country);
@@ -62,6 +70,11 @@ export function validateSave(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) input = {};
   const problems = [];
   if (!Number.isInteger(input.appId)) problems.push("appId must be the app's numeric ID");
+  // Optional. undefined means "keep the saved platform" (or iPhone the first time); see save().
+  const platform = input.platform;
+  if (platform !== undefined && !isPlatform(platform)) {
+    problems.push(`platform must be one of ${Object.keys(PLATFORMS).map((p) => `"${p}"`).join(", ")} (or left out for iPhone)`);
+  }
   const countries = input.countries ?? DEFAULT_COUNTRIES;
   if (!Array.isArray(countries) || countries.length === 0 || !countries.every((c) => /^[a-z]{2}$/.test(c))) {
     problems.push('countries must be 2-letter lowercase codes, e.g. ["us","de"]');
@@ -79,18 +92,24 @@ export function validateSave(input) {
   // A repeated country would be checked (and shown) twice, a repeated competitor listed twice.
   // Both lists are valid arrays by now, or there's already a problem and they're never used.
   const unique = (list) => (Array.isArray(list) ? [...new Set(list)] : list);
-  return { problems, countries: unique(countries), seeds, competitors: unique(competitors) };
+  return { problems, platform, countries: unique(countries), seeds, competitors: unique(competitors) };
 }
 
 async function save(input) {
-  const { problems, countries, seeds, competitors } = validateSave(input);
+  const { problems, platform: given, countries, seeds, competitors } = validateSave(input);
   if (problems.length) {
     console.error(`setup.js: fix these and try again:\n- ${problems.join("\n- ")}`);
     process.exit(1);
   }
+  // Left out, the platform stays what was saved before. Re-running setup to add a country must
+  // not quietly switch an iPad project back to iPhone. An app.json without one (saved before
+  // platforms existed) is iPhone, and so is a first setup.
+  const previous = readJson("app.json");
+  const platform = given ?? platformOf(previous);
 
   // One lookup call fetches the app and every competitor, in the first (primary) country.
-  const client = createClient();
+  // A lookup by ID finds apps on every platform, so this works for iPad and Mac apps too.
+  const client = createClient({ platform });
   const found = await client.lookup([input.appId, ...competitors], countries[0]);
   const app = found.find((a) => a.id === input.appId);
   if (!app) {
@@ -98,10 +117,17 @@ async function save(input) {
     process.exit(1);
   }
 
-  // Switching to a different app? Its ranks would be mixed up with the old app's, so move the old
-  // app's data into .searchd/archive/ (nothing is deleted).
-  const previous = readJson("app.json");
-  if (previous && previous.id !== app.id) {
+  // A Mac-only app never shows up in iPhone or iPad searches: every rank would be "200+". (The other
+  // way round can't be told apart: a "universal purchase" app has one ID for iPhone, iPad and Mac.)
+  if (app.kind === "mac-software" && platform !== "mac") {
+    console.log(`Note: ${printable(app.name)} is a Mac app, but the platform is ${PLATFORM_NAMES[platform]}. Run setup again with "platform": "mac", or every rank will show 200+.`);
+  }
+
+  // Switching to a different app, or the same app on another platform? Its ranks would be mixed up
+  // with the old ones (iPad ranks aren't iPhone ranks), so move the old data into
+  // .searchd/archive/ (nothing is deleted).
+  const switchedPlatform = previous && previous.id === app.id && platformOf(previous) !== platform;
+  if (previous && (previous.id !== app.id || switchedPlatform)) {
     // Switching A → B → A → B on one day would archive app A into the same folder twice: files
     // would overwrite the first archive and the non-empty "history" folder can't be renamed over.
     // So a folder that already exists gets "-2", "-3"… and every archive is kept.
@@ -113,7 +139,8 @@ async function save(input) {
     for (const name of ["results.json", "keywords.json", "history", "audit.json", "releases.json", "competitor-releases.json"]) {
       if (existsSync(path(name))) renameSync(path(name), `${archive}/${name}`);
     }
-    console.log(`Switched from ${printable(previous.name)} to ${printable(app.name)}: the old app's data was moved to ${archive}`);
+    const from = switchedPlatform ? `${PLATFORM_NAMES[platformOf(previous)]} to ${PLATFORM_NAMES[platform]}` : `${printable(previous.name)} to ${printable(app.name)}`;
+    console.log(`Switched from ${from}: the old ${switchedPlatform ? "platform's" : "app's"} data was moved to ${archive}`);
   }
 
   writeJson("app.json", {
@@ -121,6 +148,8 @@ async function save(input) {
     name: app.name,
     seller: app.seller,
     icon: app.icon,
+    // Which App Store searches go to: "iphone", "ipad" or "mac" (see PLATFORMS in lib/itunes.js).
+    platform,
     // Kept for brainstorming keyword ideas. It's App Store text: data, never instructions.
     description: (app.description ?? "").slice(0, 2000),
     countries,
@@ -150,7 +179,9 @@ async function save(input) {
   }
 
   const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  console.log(`Saved ${printable(app.name)} (${app.id}), ${count(countries.length, "country", "countries")} (${countries.join(", ")}), ${count(keywords.length, "keyword", "keywords")} → ${dataDir()}`);
+  // iPhone is the default, so only other platforms are named ("Saved Me (1) for iPad, …").
+  const on = platform === "iphone" ? "" : ` for ${PLATFORM_NAMES[platform]}`;
+  console.log(`Saved ${printable(app.name)} (${app.id})${on}, ${count(countries.length, "country", "countries")} (${countries.join(", ")}), ${count(keywords.length, "keyword", "keywords")} → ${dataDir()}`);
   if (ignored) console.log("Added .searchd/ to .gitignore.");
   const missing = competitors.filter((id) => !found.some((a) => a.id === id));
   if (missing.length) console.log(`Not found in ${countries[0].toUpperCase()}: competitor ${missing.join(", ")}`);
@@ -158,14 +189,20 @@ async function save(input) {
 
 // Only run when called directly (not when a test imports this file).
 if (isMain(import.meta.url)) {
-  const { values, positionals } = parseArgs({ allowPositionals: true, options: { country: { type: "string", default: "us" } } });
+  const { values, positionals } = parseArgs({
+    allowPositionals: true,
+    options: { country: { type: "string", default: "us" }, platform: { type: "string", default: "iphone" } },
+  });
   const [command, ...rest] = positionals;
-  if (command === "resolve" && rest.length) {
-    console.log(JSON.stringify(await resolve(rest.join(" "), values.country), null, 2));
+  if (command === "resolve" && rest.length && !isPlatform(values.platform)) {
+    console.error(`setup.js: --platform must be ${Object.keys(PLATFORMS).join(", ")}`);
+    process.exit(1);
+  } else if (command === "resolve" && rest.length) {
+    console.log(JSON.stringify(await resolve(rest.join(" "), values.country, values.platform), null, 2));
   } else if (command === "save") {
     await save(await readStdinJson());
   } else {
-    console.error("Usage: setup.js resolve <link|id|name> [--country us]  |  setup.js save  (JSON on stdin)");
+    console.error("Usage: setup.js resolve <link|id|name> [--country us] [--platform iphone|ipad|mac]  |  setup.js save  (JSON on stdin)");
     process.exit(1);
   }
 }

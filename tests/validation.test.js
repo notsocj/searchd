@@ -185,3 +185,14 @@ test("nothing is saved by the validators themselves", () => {
   assert.equal(readJson("keywords.json"), null);
   assert.equal(readJson("app.json"), null);
 });
+
+test("validateSave: platform is optional; when given it must be iphone, ipad or mac", () => {
+  assert.equal(validateSave({ appId: 1 }).platform, undefined, "left out: save() keeps the saved one, or iphone");
+  for (const platform of ["iphone", "ipad", "mac"]) {
+    const result = validateSave({ appId: 1, platform });
+    assert.deepEqual([result.problems, result.platform], [[], platform]);
+  }
+  for (const bad of ["android", "Mac", "", null, 5, "toString", "__proto__"]) {
+    assert.equal(validateSave({ appId: 1, platform: bad }).problems.length, 1, JSON.stringify(bad));
+  }
+});

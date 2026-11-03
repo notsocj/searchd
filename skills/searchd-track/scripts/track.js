@@ -124,7 +124,8 @@ if (isMain(import.meta.url)) {
 
   const { todo, missing } = planChecks(tracked, countries);
   if (missing.length) console.log(`Skipped (no local phrase yet, run /searchd-find to translate): ${missing.join(", ")}`);
-  const client = createClient();
+  // The platform from setup (missing in older app.json files, which means iPhone).
+  const client = createClient({ platform: app.platform });
   const { done, failed, stopped, locked } = await runChecks({ client, app, todo });
   if (locked) process.exit(1);
   if (stopped) process.exit(1); // runChecks already said why; don't report movement on half a run

@@ -78,7 +78,7 @@ export function checkListing(listing) {
 }
 
 async function data(app) {
-  const client = createClient();
+  const client = createClient({ platform: app.platform }); // same platform (and cache) as the checks
   const { entries = {} } = readJson("results.json", { entries: {} });
   const keywords = readJson("keywords.json", []);
   const countries = {};
