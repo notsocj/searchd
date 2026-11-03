@@ -286,7 +286,7 @@ Builds `.searchd/dashboard.html` and opens it in your browser. See [The dashboar
 
 ## The dashboard
 
-A single HTML file with your data baked in: it opens straight from your disk with no server, and works offline except for app icons, which load from Apple's servers. It follows your system's dark or light mode (the Light/Dark switch changes it), and works on a phone. Re-run `/searchd-dashboard` after new checks to refresh it.
+A single HTML file with your data baked in: it opens straight from your disk with no server, and works offline except for app icons, which load from Apple's servers. Next to your app's name, a small label shows which App Store the ranks come from (iPhone, iPad, or Mac). It follows your system's dark or light mode (the Light/Dark switch changes it), and works on a phone. Re-run `/searchd-dashboard` after new checks to refresh it.
 
 | Tab | What it shows |
 |---|---|
