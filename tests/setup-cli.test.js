@@ -27,8 +27,10 @@ const save = (body) => run(["save"], JSON.stringify(body));
 const dir = (...parts) => join(process.env.SEARCHD_DIR, ...parts);
 
 /** Put an answer where the iTunes client looks for it (same name scheme as lib/itunes.js). */
-function seed(kind, key, country, results) {
-  const hash = createHash("sha1").update(`${kind}:${key}`).digest("hex").slice(0, 16);
+function seed(kind, key, country, results, platform = "iphone") {
+  // iPhone keeps the original key; other platforms put their name first (see cacheName in lib/itunes.js).
+  const id = platform === "iphone" ? `${kind}:${key}` : `${platform}/${kind}:${key}`;
+  const hash = createHash("sha1").update(id).digest("hex").slice(0, 16);
   writeJson(`cache/${today()}/${country}/${hash}.json`, { kind, key, country, results });
 }
 const store = (id, name, extra = {}) => ({ id, name, icon: `https://img/${id}.png`, ratings: id, rating: 4.5, seller: `Seller ${id}`, description: `About ${name}`, ...extra });
@@ -151,4 +153,85 @@ test("switching apps twice on the same day keeps BOTH archives (nothing is overw
   assert.equal(archives.length, 3, `three archives, got ${archives}`);
   const allResults = archives.flatMap((a) => (existsSync(dir("archive", a, "results.json")) ? [Object.keys(readJson(`archive/${a}/results.json`).entries)[0]] : []));
   assert.deepEqual(allResults.sort(), ["first", "second", "third"], "every earlier run's results survived");
+});
+
+// ---- platform (iPhone, iPad, Mac) ----
+
+test("save: platform defaults to iphone, and is saved in app.json", () => {
+  seed("lookup", "1", "us", [store(1, "Me")]);
+  const result = save({ appId: 1, countries: ["us"] });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^Saved Me \(1\), 1 country/m, "iPhone isn't named: it's the default");
+  assert.equal(readJson("app.json").platform, "iphone");
+});
+
+test("save: an iPad or Mac platform is saved, named in the output, and looked up in its own cache", () => {
+  // Seeded ONLY under the ipad key: if save used the iPhone cache it would miss and try the network.
+  seed("lookup", "1", "us", [store(1, "Me")], "ipad");
+  const result = save({ appId: 1, platform: "ipad", countries: ["us"] });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^Saved Me \(1\) for iPad, 1 country/m);
+  assert.equal(readJson("app.json").platform, "ipad");
+});
+
+test("save again without a platform keeps the saved one (adding a country doesn't switch back to iPhone)", () => {
+  seed("lookup", "1", "us", [store(1, "Me")], "mac");
+  save({ appId: 1, platform: "mac", countries: ["us"], seeds: ["planner"] });
+  const result = save({ appId: 1, countries: ["us"], seeds: ["timer"] });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readJson("app.json").platform, "mac");
+  assert.ok(!existsSync(dir("archive")), "same app, same platform: nothing archived");
+});
+
+test("save: an app.json from before platforms existed counts as iPhone, and gains the field", () => {
+  seed("lookup", "1", "us", [store(1, "Me")]);
+  writeJson("app.json", { id: 1, name: "Me", countries: ["us"], competitors: [] }); // no "platform"
+  writeJson("results.json", { entries: { "planner|us": { rank: 1 } } });
+  const result = save({ appId: 1, countries: ["us"] });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readJson("app.json").platform, "iphone");
+  assert.ok(!existsSync(dir("archive")), "no platform field = iphone = not a switch");
+  assert.ok(existsSync(dir("results.json")));
+});
+
+test("save: the same app on another platform archives the old ranks (iPad ranks aren't iPhone ranks)", () => {
+  seed("lookup", "1", "us", [store(1, "Me")]);
+  seed("lookup", "1", "us", [store(1, "Me")], "ipad");
+  save({ appId: 1, countries: ["us"], seeds: ["planner"] });
+  writeJson("results.json", { entries: { "planner|us": { rank: 4 } } });
+  writeJson(`history/${today()}.json`, { date: today(), ranks: { "planner|us": 4 } });
+
+  const result = save({ appId: 1, platform: "ipad", countries: ["us"], seeds: ["planner"] });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Switched from iPhone to iPad: the old platform's data was moved to/);
+  assert.deepEqual(readdirSync(dir("archive", `1-${today()}`)).sort(), ["history", "keywords.json", "results.json"]);
+  assert.ok(!existsSync(dir("results.json")) && !existsSync(dir("history")));
+  assert.equal(readJson("app.json").platform, "ipad");
+});
+
+test("save: an unknown platform is a problem and nothing is saved", () => {
+  for (const platform of ["android", "iPad", "", null, 1, "constructor"]) {
+    const result = save({ appId: 1, platform, countries: ["us"] });
+    assert.equal(result.status, 1, JSON.stringify(platform));
+    assert.match(result.stderr, /platform must be one of "iphone", "ipad", "mac"/);
+  }
+  assert.ok(!existsSync(dir("app.json")));
+});
+
+test("save: a Mac app set up for iPhone gets a note (it would never show up in iPhone searches)", () => {
+  seed("lookup", "1", "us", [store(1, "Desk Tool", { kind: "mac-software" })]);
+  const result = save({ appId: 1, countries: ["us"] });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Note: Desk Tool is a Mac app, but the platform is iPhone/);
+  seed("lookup", "1", "us", [store(1, "Desk Tool", { kind: "mac-software" })], "mac");
+  assert.doesNotMatch(save({ appId: 1, platform: "mac", countries: ["us"] }).stdout, /Note:/);
+});
+
+test("resolve --platform searches that platform's store (its own cache key); a bad value exits 1", () => {
+  seed("search", "daily planner", "us", [store(7, "Mac Planner")], "mac");
+  const byName = JSON.parse(run(["resolve", "daily planner", "--platform", "mac"]).stdout);
+  assert.deepEqual(byName.matches.map((m) => m.id), [7]);
+  const bad = run(["resolve", "daily planner", "--platform", "watch"]);
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /--platform must be iphone, ipad, mac/);
 });

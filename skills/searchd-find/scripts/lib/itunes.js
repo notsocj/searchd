@@ -3,6 +3,9 @@
 //   search: https://itunes.apple.com/search?term=<keyword>&country=<cc>&entity=software&limit=200
 //   lookup: https://itunes.apple.com/lookup?id=<appId>&country=<cc>
 //
+// The App Store has separate search results for iPhone, iPad and Mac apps. The `entity` parameter
+// picks which: a client is made for ONE platform (see PLATFORMS), and every search it makes uses it.
+//
 // Three things make it polite and cheap:
 //   1. A throttle: Apple allows roughly 20 calls a minute, so we wait ~3.5 s between calls.
 //   2. Retries with backoff: when Apple says "slow down" (HTTP 403/429) or has a hiccup (5xx),
@@ -11,8 +14,9 @@
 //      row go through, it speeds back up step by step. (Without that recovery, one 403 at the
 //      start of a run made the WHOLE run 50% slower in testing.)
 //      Network errors (offline, DNS) get only one retry: waiting minutes won't bring Wi-Fi back.
-//   3. A cache keyed by (term, country, date): the same search is never repeated on the same
-//      day. That also makes long runs resumable: re-run after a stop and finished checks are free.
+//   3. A cache keyed by (term, country, platform, date): the same search is never repeated on the
+//      same day. That also makes long runs resumable: re-run after a stop and finished checks are
+//      free. Different platforms never share a cache file, since their results differ.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -20,6 +24,17 @@ import { path, writeJson, today } from "./store.js";
 
 const SEARCH_URL = "https://itunes.apple.com/search";
 const LOOKUP_URL = "https://itunes.apple.com/lookup";
+
+/**
+ * The platforms searchd can research, and the iTunes Search API `entity` for each. "iphone" is the
+ * default: app.json files saved before platforms existed have no `platform` field, and they were
+ * all iPhone searches (entity=software).
+ */
+export const PLATFORMS = { iphone: "software", ipad: "iPadSoftware", mac: "macSoftware" };
+export const DEFAULT_PLATFORM = "iphone";
+
+/** The platform an app.json is set up for: its `platform` field, or "iphone" when it has none. */
+export const platformOf = (app) => app?.platform ?? DEFAULT_PLATFORM;
 
 // We keep app descriptions only for the top 50 results: that's all the volume score reads,
 // and descriptions are most of the response's size.
@@ -40,8 +55,13 @@ function trim(app, keepDescription) {
 
 /** Cache file for one request: cache/<today>/<country>/<hash>.json. Hashing keeps any
  *  keyword (spaces, umlauts, Japanese…) safe to use as a file name. */
-function cacheName(kind, key, country) {
-  const hash = createHash("sha1").update(`${kind}:${key}`).digest("hex").slice(0, 16);
+function cacheName(kind, key, country, platform) {
+  // iPhone keeps the key it always had ("search:<term>"), so a cache written before platforms
+  // existed is still a hit. Other platforms put their name FIRST ("ipad/search:<term>"): an iPhone
+  // key always starts with "search:" or "lookup:", so the two can never be the same text, even
+  // for an odd search term like "ipad/search:x".
+  const id = platform === DEFAULT_PLATFORM ? `${kind}:${key}` : `${platform}/${kind}:${key}`;
+  const hash = createHash("sha1").update(id).digest("hex").slice(0, 16);
   return ["cache", today(), country, `${hash}.json`];
 }
 
@@ -49,17 +69,26 @@ const sleepFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Make a client. Options exist so tests can run instantly with a fake fetch:
+ *   platform    - "iphone" (default), "ipad" or "mac": which App Store to search (see PLATFORMS)
  *   fetchImpl   - defaults to Node's built-in fetch
  *   throttleMs  - starting gap between two network calls (default 3500)
  *   retryDelays - how long to wait before each retry (default 10 s, 30 s, 60 s)
  *   sleep       - how to wait (tests pass a no-op)
  */
 export function createClient({
+  platform,
   fetchImpl = fetch,
   throttleMs = 3500,
   retryDelays = [10_000, 30_000, 60_000],
   sleep = sleepFor,
 } = {}) {
+  // Missing (an app.json from before platforms existed) or null (a hand edit) means iPhone.
+  platform ??= DEFAULT_PLATFORM;
+  // Object.hasOwn, not `in`: "constructor" or "toString" must not count as a platform.
+  if (!Object.hasOwn(PLATFORMS, platform)) {
+    throw new Error(`searchd: platform must be ${Object.keys(PLATFORMS).join(", ")} (got "${platform}"). Fix it in .searchd/app.json or run /searchd-setup again.`);
+  }
+  const entity = PLATFORMS[platform];
   let lastCall = 0;
   let calls = 0; // network calls actually made (cache hits don't count)
   let gap = throttleMs; // current gap; grows when Apple tells us to slow down
@@ -111,7 +140,7 @@ export function createClient({
 
   /** Read a cached response for today, or fetch it and cache it. */
   async function cached(kind, key, country, fetcher) {
-    const name = cacheName(kind, key, country);
+    const name = cacheName(kind, key, country, platform);
     const file = path(...name);
     if (existsSync(file)) {
       try {
@@ -123,15 +152,15 @@ export function createClient({
       }
     }
     const results = await fetcher();
-    writeJson(name.join("/"), { kind, key, country, results });
+    writeJson(name.join("/"), { kind, key, country, platform, results });
     return results;
   }
 
   return {
-    /** Search the App Store in one country. Returns up to 200 apps, in Apple's order. */
+    /** Search the App Store in one country, on this client's platform. Up to 200 apps, in Apple's order. */
     search(term, country) {
       return cached("search", term, country, async () => {
-        const url = `${SEARCH_URL}?${new URLSearchParams({ term, country, entity: "software", limit: "200" })}`;
+        const url = `${SEARCH_URL}?${new URLSearchParams({ term, country, entity, limit: "200" })}`;
         const data = await getJson(url);
         return (data.results ?? []).map((app, i) => trim(app, i < KEEP_DESCRIPTIONS));
       });
@@ -140,6 +169,9 @@ export function createClient({
     /**
      * Look up apps by numeric ID in one country. One call handles several IDs ("id=1,2,3").
      * Apps not sold in that country are simply missing from the returned list.
+     * A lookup by ID finds an app on any platform, so it needs no `entity`; it's still cached per
+     * platform, so two platforms never share a cache file. `kind` ("software" for iPhone/iPad,
+     * "mac-software" for Mac) lets setup warn when an app doesn't match the chosen platform.
      */
     lookup(ids, country) {
       const id = [].concat(ids).join(",");
@@ -148,6 +180,7 @@ export function createClient({
         // A lookup also keeps the current version: /searchd-track uses it to notice new releases.
         return (data.results ?? []).filter((r) => r.trackId).map((app) => ({
           ...trim(app, true),
+          kind: app.kind ?? "",
           version: app.version ?? "",
           released: app.currentVersionReleaseDate ?? "",
           notes: app.releaseNotes ?? "",
@@ -157,8 +190,11 @@ export function createClient({
 
     /** True if this search/lookup would hit the network (used for the time estimate). */
     isCached(kind, key, country) {
-      return existsSync(path(...cacheName(kind, key, country)));
+      return existsSync(path(...cacheName(kind, key, country, platform)));
     },
+
+    /** The platform this client searches ("iphone", "ipad" or "mac"). */
+    platform,
 
     get calls() {
       return calls;

@@ -30,15 +30,67 @@ export function normalize(text) {
 // can't work there. For phrases in those scripts we fall back to a plain substring match.
 const NO_SPACE_SCRIPTS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]/u;
 
-/** Does `text` contain `phrase` as whole words? Both must already be normalized. */
-export function hasPhrase(text, phrase) {
-  if (!phrase) return false;
-  if (NO_SPACE_SCRIPTS.test(phrase)) return text.includes(phrase);
-  // Padding with spaces makes "cal" NOT match inside "calorie", but "calorie" match anywhere.
-  return ` ${text} `.includes(` ${phrase} `);
+// ---- Plurals ----
+// An app called "Calorie Counter" targets the search "calories counter" as much as "calorie
+// counter" does, so word matching treats simple English plurals as the same word. This is a small
+// suffix rule on purpose, not a stemmer: a stemmer also merges words that mean different things
+// ("universe"/"university"), and a wrong merge inflates volume quietly. The rule only ever compares
+// TWO words ("is one the plural of the other?"); it never rewrites a word on its own.
+
+// The singular must have 3+ letters. That keeps "app"/"apps" and "map"/"maps", but stops short
+// words from merging: "us"/"u", "has"/"ha", "his"/"hi", and the French/Spanish articles
+// "les"/"le", "des"/"de", "los"/"lo".
+const MIN_SINGULAR = 3;
+
+// Words that end like a plural but aren't one of the shorter word next to them.
+const NOT_PLURALS = new Set(["news"]); // "news" isn't "new" + s
+
+/**
+ * Is `plural` a simple English plural of `singular`? Three patterns:
+ *   + s     calorie → calories, app → apps, day → days, movie → movies
+ *   + es    after s, x, z, ch, sh: box → boxes, glass → glasses, watch → watches
+ *   y → ies after a consonant: diary → diaries, story → stories ("day" → "days" is the + s rule)
+ */
+export function isPluralOf(plural, singular) {
+  if (singular.length < MIN_SINGULAR || NOT_PLURALS.has(plural)) return false;
+  // Not after a word that already ends in "s": "glass" isn't the plural of "glas" (German for glass),
+  // and "fitness" isn't the plural of "fitnes".
+  if (plural === singular + "s") return !singular.endsWith("s");
+  if (plural === singular + "es") return /(?:s|x|z|ch|sh)$/.test(singular);
+  if (/[^aeiou]y$/.test(singular)) return plural === singular.slice(0, -1) + "ies";
+  return false;
 }
 
-/** Does `text` contain every word of `phrase`, in any order? */
+/** Same word, or one is the simple plural of the other ("diary" = "diaries", "new" ≠ "news"). */
+export function sameWord(a, b) {
+  return a === b || isPluralOf(a, b) || isPluralOf(b, a);
+}
+
+/**
+ * Does `text` contain `phrase` as whole words? Both must already be normalized.
+ * Simple plurals count as the same word ("calories counter" contains "calorie counter"), unless
+ * `{ plurals: false }` asks for the exact words (the audit's "already in the name" check does).
+ */
+export function hasPhrase(text, phrase, { plurals = true } = {}) {
+  if (!phrase) return false;
+  // Plurals stay off for these scripts: there are no spaces to find word endings with, and
+  // their plurals don't work like English ones anyway.
+  if (NO_SPACE_SCRIPTS.test(phrase)) return text.includes(phrase);
+  // Padding with spaces makes "cal" NOT match inside "calorie", but "calorie" match anywhere.
+  // This exact check is also the fast path: most matches are exact, and it's one string search.
+  if (` ${text} `.includes(` ${phrase} `)) return true;
+  if (!plurals) return false;
+  // Slide the phrase's words along the text's words; each pair must be the same word or a plural.
+  // Both are normalized, so words are separated by exactly one space.
+  const want = phrase.split(" ");
+  const words = text.split(" ");
+  for (let i = 0; i + want.length <= words.length; i++) {
+    if (want.every((word, j) => sameWord(words[i + j], word))) return true;
+  }
+  return false;
+}
+
+/** Does `text` contain every word of `phrase`, in any order? (Plurals count, as in hasPhrase.) */
 export function hasAllWords(text, phrase) {
   const words = phrase.split(" ").filter(Boolean);
   return words.length > 0 && words.every((word) => hasPhrase(text, word));
@@ -66,6 +118,8 @@ export function rankOf(results, appId) {
 /**
  * How strongly one app "targets" a phrase. Developers put the keywords they care about most in
  * the app NAME (the field Apple weighs most), so:
+ * (Simple plurals count as the same word at every level: "Calories Counter" is 1.00 for
+ * "calorie counter". See isPluralOf above.)
  *   1.00  the exact phrase is in the name           ("Calorie Counter by fatsecret")
  *   0.60  every word is in the name, but split up    ("Counter of Calories"), or the same
  *         letters with different spacing ("Kalorien Zähler" for "kalorienzähler")

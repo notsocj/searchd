@@ -199,13 +199,14 @@ Sets up searchd for one app in the current folder.
    - an App Store link: `https://apps.apple.com/us/app/…/id1499198946`, old `itunes.apple.com` links, links without a country, or `itms-apps://` links
    - the numeric app ID: `1499198946` (or `id1499198946`)
    - the app's name: searchd shows the top 5 matches and you pick yours
-2. **Countries:** 2-letter codes. Default: 🇺🇸 US, 🇬🇧 GB, 🇨🇦 CA, 🇦🇺 AU, 🇵🇭 PH, 🇩🇪 DE, 🇫🇷 FR, 🇯🇵 JP, 🇪🇸 ES, 🇧🇷 BR. Each country adds one check per keyword, so fewer countries means faster runs.
-3. **Seed keywords:** 3–5 phrases you want to be found for, in English. Your agent suggests some from your app's description.
-4. **Competitors (optional):** apps to compare against head to head. Found by name or link, like your app.
+2. **Platform (optional):** `iphone` (the default), `ipad`, or `mac`. The App Store has separate search results for each, so pick the store you want to rank in. A Mac app gets a note if you leave it on iPhone, since it would never show up there.
+3. **Countries:** 2-letter codes. Default: 🇺🇸 US, 🇬🇧 GB, 🇨🇦 CA, 🇦🇺 AU, 🇵🇭 PH, 🇩🇪 DE, 🇫🇷 FR, 🇯🇵 JP, 🇪🇸 ES, 🇧🇷 BR. Each country adds one check per keyword, so fewer countries means faster runs.
+4. **Seed keywords:** 3–5 phrases you want to be found for, in English. Your agent suggests some from your app's description.
+5. **Competitors (optional):** apps to compare against head to head. Found by name or link, like your app.
 
 It saves `.searchd/app.json` and `.searchd/keywords.json`, and adds `.searchd/` to your project's `.gitignore` if it has one.
 
-Running it again later updates the countries and competitors and adds new seeds; everything already saved is kept. **Switching to a different app** moves the old app's keywords, results, and history to `.searchd/archive/<old app ID>-<date>/`, so two apps' numbers never mix.
+Running it again later updates the countries and competitors and adds new seeds; everything already saved is kept, including the platform unless you name a new one. **Switching to a different app**, or the same app to **a different platform**, moves the old keywords, results, and history to `.searchd/archive/<old app ID>-<date>/`, so iPhone and iPad ranks (or two apps' numbers) never mix. To research one app on two platforms, run searchd from two folders.
 
 ### `/searchd-find [topic]`
 
@@ -319,6 +320,16 @@ If most of the top 50 apps put a phrase in their name, many developers decided i
 
 Text is compared after cleaning: lowercase, Unicode-normalized (full-width "Ａ" = "A"), punctuation and symbols removed ("Lose It! – Calorie Counter™" = "lose it calorie counter"). Words must match whole ("cal" doesn't match "calorie"), except in Japanese, Chinese, Korean, and Thai, which don't put spaces between words.
 
+Simple English plurals count as the same word, so "Calories Counter" counts fully for "calorie counter". The rule is small on purpose, not a full stemmer:
+
+| Plural | Example |
+|---|---|
+| + s | calorie → calories, app → apps, day → days |
+| + es after s, x, z, ch, sh | box → boxes, glass → glasses, watch → watches |
+| y → ies after a consonant | diary → diaries, story → stories |
+
+The singular needs 3+ letters (so "has" isn't "ha" and the French "les" isn't "le"), nothing is added after a word that already ends in "s" ("glass" isn't the plural of "glas"), and "news" is never "new". It applies to languages that put spaces between words; Japanese, Chinese, Korean, and Thai keep the plain substring match. The audit's "already in the name or subtitle" check still wants the exact word.
+
 ### Difficulty (0–100)
 
 Rating counts are the best public sign of how big an app is. Each top-10 app gets a size score on a **log scale**:
@@ -373,11 +384,11 @@ Everything is in `.searchd/` inside the folder you run searchd from, as plain JS
 
 | File | What's in it |
 |---|---|
-| `app.json` | your app (ID, name, icon, description), countries, competitors |
+| `app.json` | your app (ID, name, icon, description), `platform` (`iphone`, `ipad` or `mac`; files without it count as `iphone`), countries, competitors |
 | `keywords.json` | every keyword: `keyword`, `status` (tracked / idea), `local` (phrase per country) |
 | `results.json` | the latest check per keyword × country: phrase, rank, volume, difficulty, opportunity, top 10 apps, competitors' ranks |
 | `history/<date>.json` | that day's ranks: `{ "keyword\|cc": rank }` (null = 200+) |
-| `cache/<date>/` | today's raw search results (older days are deleted automatically) |
+| `cache/<date>/` | today's raw search results, kept apart per platform (older days are deleted automatically) |
 | `releases.json` | each version of your app `/searchd-track` has seen: version, release date, name, whether the description changed, release notes |
 | `competitor-releases.json` | the same, per competitor from setup |
 | `audit.json` | the last listing suggestion that passed the checks |
@@ -391,8 +402,8 @@ Everything is in `.searchd/` inside the folder you run searchd from, as plain JS
 The skills are plain Node.js scripts, so you can run them without an agent. Run them from your project folder (`SKILLS` = where you installed searchd, e.g. `~/.claude/skills`):
 
 ```bash
-node $SKILLS/searchd-setup/scripts/setup.js resolve "structured daily planner"
-echo '{"appId":1499198946,"countries":["us","de"],"seeds":["daily planner"]}' | node $SKILLS/searchd-setup/scripts/setup.js save
+node $SKILLS/searchd-setup/scripts/setup.js resolve "structured daily planner"   # option: --platform iphone|ipad|mac
+echo '{"appId":1499198946,"platform":"iphone","countries":["us","de"],"seeds":["daily planner"]}' | node $SKILLS/searchd-setup/scripts/setup.js save
 
 node $SKILLS/searchd-find/scripts/find.js status            # app, countries, keywords missing a local phrase
 echo '[{"keyword":"daily planner","local":{"us":"daily planner","de":"tagesplaner"}}]' | node $SKILLS/searchd-find/scripts/find.js keywords
@@ -426,10 +437,11 @@ In `find.js keywords`, `"status": "tracked"` tracks a keyword and `"remove": tru
 - **Volume is a proxy, not real search data.** It measures how much developers *target* a phrase, which tracks demand but isn't a count of searches. Use it to compare keywords, not to forecast downloads.
 - **The API's order can differ slightly from the App Store app.** The iTunes Search API is close to, but not exactly, what people see on their phones (which also personalizes results). Treat ranks as a good approximation and watch the trend.
 - **Only the top 200.** Below that, every app is "200+".
-- **Word matching is simple.** Plurals ("calorie" vs "calories") count as different words, and symbols are dropped ("c++" is read as "c").
+- **Word matching is simple.** Only regular plurals are merged ("calorie"/"calories", "diary"/"diaries", "box"/"boxes"). Irregular ones ("child"/"children", "leaf"/"leaves", "potato"/"potatoes", "quiz"/"quizzes"), other languages' plural forms (French "jeu"/"jeux"), and 2-letter words ("ad"/"ads") still count as different words. Symbols are dropped ("c++" is read as "c").
 - **Difficulty only sees ratings**, not app age, update frequency, or conversion rate.
 - **Translations are your agent's.** No translation API checks them.
-- **iPhone apps only** for now (`entity=software`).
+- **One platform per folder.** iPhone, iPad, and Mac each have their own search results (`entity=software`, `iPadSoftware`, `macSoftware`), and a folder tracks one of them. Apple TV, Apple Watch, and Vision Pro apps aren't supported.
+- **Platform mismatches are only partly caught.** A Mac-only app set up for iPhone or iPad gets a note. The other way round can't be told apart: a "universal purchase" app uses one ID for iPhone, iPad, and Mac, so an iPhone-only app set up for Mac just shows 200+ everywhere.
 
 ## Privacy and safety
 

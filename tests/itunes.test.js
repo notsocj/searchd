@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createClient, pruneCache } from "../skills/searchd-find/scripts/lib/itunes.js";
+import { createClient, pruneCache, PLATFORMS, platformOf } from "../skills/searchd-find/scripts/lib/itunes.js";
 import { today } from "../skills/searchd-find/scripts/lib/store.js";
 
 beforeEach(() => {
@@ -279,4 +279,64 @@ test("pruneCache deletes other days' folders and keeps today's; no cache folder 
   assert.deepEqual(readdirSync(cache), [today()]);
   assert.ok(existsSync(join(process.env.SEARCHD_DIR, "results.json")), "only the cache folder is touched");
   assert.ok(client.isCached("search", "notes", "us"));
+});
+
+// ---- platforms (iPhone, iPad, Mac) ----
+
+test("each platform searches with its own iTunes entity; no platform means iPhone", async () => {
+  for (const [platform, entity] of [[undefined, "software"], [null, "software"], ["iphone", "software"], ["ipad", "iPadSoftware"], ["mac", "macSoftware"]]) {
+    let url;
+    const client = createClient({ platform, fetchImpl: async (u) => ((url = new URL(u)), json({ results: [] })), throttleMs: 0, sleep: async () => {} });
+    await client.search(`notes ${platform}`, "us"); // a different term each time, so nothing is cached
+    assert.equal(url.searchParams.get("entity"), entity, String(platform));
+    assert.equal(client.platform, platform ?? "iphone");
+  }
+  assert.deepEqual(PLATFORMS, { iphone: "software", ipad: "iPadSoftware", mac: "macSoftware" });
+});
+
+test("different platforms never share a cache file, for searches or lookups", async () => {
+  let calls = 0;
+  const fetchImpl = async () => (calls++, json({ results: [{ trackId: 1, trackName: "A" }] }));
+  const on = (platform) => createClient({ platform, fetchImpl, throttleMs: 0, sleep: async () => {} });
+  await on("iphone").search("notes", "us");
+  assert.ok(!on("ipad").isCached("search", "notes", "us"), "an iPhone search isn't an iPad hit");
+  await on("ipad").search("notes", "us");
+  await on("mac").search("notes", "us");
+  assert.equal(calls, 3);
+  await on("ipad").search("notes", "us"); // same platform: cached
+  assert.equal(calls, 3);
+  await on("iphone").lookup(1, "us");
+  await on("mac").lookup(1, "us");
+  assert.equal(calls, 5);
+  // A search term shaped like another platform's key can't collide with it either.
+  await on("iphone").search("ipad/search:notes", "us");
+  assert.equal(calls, 6);
+});
+
+test("an iPhone client reads the cache key from before platforms existed", async () => {
+  const { createHash } = await import("node:crypto");
+  const { writeJson } = await import("../skills/searchd-find/scripts/lib/store.js");
+  const hash = createHash("sha1").update("search:notes").digest("hex").slice(0, 16);
+  writeJson(`cache/${today()}/us/${hash}.json`, { kind: "search", key: "notes", country: "us", results: [{ id: 42 }] });
+  const client = fast(async () => assert.fail("must come from the cache"));
+  assert.deepEqual(await client.search("notes", "us"), [{ id: 42 }]);
+});
+
+test("an unknown platform is refused with a clear error, before any request", async () => {
+  for (const platform of ["android", "iPad", "", "constructor", "toString"]) {
+    assert.throws(() => createClient({ platform, fetchImpl: async () => assert.fail("no request") }), /platform must be iphone, ipad, mac/, platform);
+  }
+});
+
+test("lookup keeps the app's kind (software / mac-software)", async () => {
+  const client = fast(async () => json({ results: [{ trackId: 1, trackName: "A", kind: "mac-software" }, { trackId: 2, trackName: "B" }] }));
+  const [mac, other] = await client.lookup([1, 2], "us");
+  assert.equal(mac.kind, "mac-software");
+  assert.equal(other.kind, "", "missing kind is an empty string");
+});
+
+test("platformOf: an app.json without a platform is iphone", () => {
+  assert.equal(platformOf({ id: 1 }), "iphone");
+  assert.equal(platformOf(null), "iphone");
+  assert.equal(platformOf({ platform: "mac" }), "mac");
 });

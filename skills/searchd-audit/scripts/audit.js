@@ -70,13 +70,15 @@ export function checkListing(listing) {
     if (seen.has(word)) problems.push(`${label}: "${item}" is in the keyword field twice`);
     seen.add(word);
     // hasPhrase matches whole words, and substrings for Japanese/Chinese/Korean/Thai.
-    if (hasPhrase(visible, word)) problems.push(`${label}: "${item}" is already in the name or subtitle`);
+    // Exact words only here (plurals: false): this check REJECTS a listing, and whether Apple
+    // indexes "calories" when the name says "calorie" isn't documented, so we don't guess.
+    if (hasPhrase(visible, word, { plurals: false })) problems.push(`${label}: "${item}" is already in the name or subtitle`);
   }
   return problems;
 }
 
 async function data(app) {
-  const client = createClient();
+  const client = createClient({ platform: app.platform }); // same platform (and cache) as the checks
   const { entries = {} } = readJson("results.json", { entries: {} });
   const keywords = readJson("keywords.json", []);
   const countries = {};
