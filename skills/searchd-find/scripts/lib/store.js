@@ -63,11 +63,39 @@ export function writeJson(name, data) {
   }
 }
 
-/** The app saved by /searchd-setup. Exits with a clear message if setup hasn't run here. */
+/**
+ * The platforms searchd can research, and the iTunes Search API `entity` for each. "iphone" is the
+ * default: app.json files saved before platforms existed have no `platform` field, and they were
+ * all iPhone searches (entity=software). These live here, next to requireApp(), because they
+ * describe a field of app.json; lib/itunes.js re-exports them for the client.
+ */
+export const PLATFORMS = { iphone: "software", ipad: "iPadSoftware", mac: "macSoftware" };
+export const DEFAULT_PLATFORM = "iphone";
+
+/** Is this one of the platforms above? (Object.hasOwn: "constructor" is not a platform.) */
+export const isPlatform = (value) => typeof value === "string" && Object.hasOwn(PLATFORMS, value);
+
+/** The platform an app.json is set up for: its `platform` field, or "iphone" when it has none. */
+export const platformOf = (app) => app?.platform ?? DEFAULT_PLATFORM;
+
+/**
+ * The app saved by /searchd-setup. Exits with ONE clear line (code 1, no stack trace) if setup
+ * hasn't run here, or if app.json's "platform" was hand-edited to something searchd can't search.
+ * Every script loads the app through here before making a client, so a bad value is caught
+ * before any work starts.
+ */
 export function requireApp() {
   const app = readJson("app.json");
   if (!app) {
     console.error(`searchd isn't set up in this folder (no ${path("app.json")}). Run /searchd-setup first.`);
+    process.exit(1);
+  }
+  // Missing or null means iPhone (platformOf). Anything else must be a known platform.
+  if (app.platform != null && !isPlatform(app.platform)) {
+    // JSON.stringify shows exactly what's there ("Mac" vs "mac", 5 vs "5"), cut short and made
+    // printable so a strange value can't flood or mess up the terminal.
+    const got = printable(String(JSON.stringify(app.platform)).slice(0, 40));
+    console.error(`searchd: "platform" in ${path("app.json")} must be ${Object.keys(PLATFORMS).join(", ")} (got ${got}). Fix it, or run /searchd-setup again with the right platform.`);
     process.exit(1);
   }
   return app;

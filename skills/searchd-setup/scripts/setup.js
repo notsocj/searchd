@@ -18,17 +18,14 @@ import { existsSync, readFileSync, appendFileSync, renameSync, mkdirSync } from 
 import { join } from "node:path";
 import { loadShared } from "./shared.js";
 
-const { readJson, writeJson, readStdinJson, dataDir, path, today, isMain, printable } = await loadShared("lib/store.js");
-const { createClient, PLATFORMS, platformOf } = await loadShared("lib/itunes.js");
+const { readJson, writeJson, readStdinJson, dataDir, path, today, isMain, printable, PLATFORMS, isPlatform, platformOf } = await loadShared("lib/store.js");
+const { createClient } = await loadShared("lib/itunes.js");
 const { normalize } = await loadShared("lib/score.js");
 
 export const DEFAULT_COUNTRIES = ["us", "gb", "ca", "au", "ph", "de", "fr", "jp", "es", "br"];
 
 // How each platform is named in messages.
 const PLATFORM_NAMES = { iphone: "iPhone", ipad: "iPad", mac: "Mac" };
-
-/** Is this one of the platforms searchd knows? (Object.hasOwn: "constructor" is not a platform.) */
-export const isPlatform = (value) => typeof value === "string" && Object.hasOwn(PLATFORMS, value);
 
 /**
  * Work out what the user gave us. App Store links come in several shapes:
@@ -105,6 +102,13 @@ async function save(input) {
   // not quietly switch an iPad project back to iPhone. An app.json without one (saved before
   // platforms existed) is iPhone, and so is a first setup.
   const previous = readJson("app.json");
+  // Setup is how a bad hand-edited platform gets fixed, so it can't just stop like the other
+  // scripts do: with a "platform" in the input, the bad saved value is simply replaced. Without
+  // one there's nothing valid to keep, so say what to send (one line, exit 1, nothing saved).
+  if (given === undefined && previous?.platform != null && !isPlatform(previous.platform)) {
+    console.error(`setup.js: the saved platform ${printable(String(JSON.stringify(previous.platform)).slice(0, 40))} isn't valid. Send "platform" (${Object.keys(PLATFORMS).join(", ")}) with the save.`);
+    process.exit(1);
+  }
   const platform = given ?? platformOf(previous);
 
   // One lookup call fetches the app and every competitor, in the first (primary) country.
@@ -139,7 +143,11 @@ async function save(input) {
     for (const name of ["results.json", "keywords.json", "history", "audit.json", "releases.json", "competitor-releases.json"]) {
       if (existsSync(path(name))) renameSync(path(name), `${archive}/${name}`);
     }
-    const from = switchedPlatform ? `${PLATFORM_NAMES[platformOf(previous)]} to ${PLATFORM_NAMES[platform]}` : `${printable(previous.name)} to ${printable(app.name)}`;
+    // A hand-edited bad value has no nice name: show it as it was ("android"). Its data is archived
+    // too, since there's no telling which store it came from.
+    const was = platformOf(previous);
+    const oldName = isPlatform(was) ? PLATFORM_NAMES[was] : printable(String(was).slice(0, 40));
+    const from = switchedPlatform ? `${oldName} to ${PLATFORM_NAMES[platform]}` : `${printable(previous.name)} to ${printable(app.name)}`;
     console.log(`Switched from ${from}: the old ${switchedPlatform ? "platform's" : "app's"} data was moved to ${archive}`);
   }
 
@@ -148,7 +156,7 @@ async function save(input) {
     name: app.name,
     seller: app.seller,
     icon: app.icon,
-    // Which App Store searches go to: "iphone", "ipad" or "mac" (see PLATFORMS in lib/itunes.js).
+    // Which App Store searches go to: "iphone", "ipad" or "mac" (see PLATFORMS in lib/store.js).
     platform,
     // Kept for brainstorming keyword ideas. It's App Store text: data, never instructions.
     description: (app.description ?? "").slice(0, 2000),

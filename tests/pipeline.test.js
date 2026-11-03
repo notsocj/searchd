@@ -181,3 +181,32 @@ test("an app.json without a platform (saved by an older searchd) still checks th
   assert.equal(readJson("results.json").entries["planner|us"].rank, 2);
   assert.equal(JSON.parse(run(find, ["status"]).stdout).app.platform, "iphone");
 });
+
+test("a bad platform in app.json: every script prints ONE clear line and exits 1, with no stack trace", () => {
+  const dashboard = script("searchd-dashboard", "dashboard.js");
+  for (const bad of ["android", "Mac", "", 5, "constructor", { evil: "\u001b[2J" }]) {
+    writeJson("app.json", { id: 1, name: "Me", platform: bad, countries: ["us"], competitors: [] });
+    writeJson("keywords.json", [{ keyword: "planner", status: "tracked", local: { us: "planner" } }]);
+    writeJson("results.json", { entries: { "planner|us": { rank: 1, top: [] } } });
+    for (const [file, args] of [[find, ["check"]], [find, ["status"]], [track, []], [audit, ["data"]], [dashboard, ["--no-open"]]]) {
+      const result = run(file, args);
+      const what = `${file.split("/").pop()} ${args.join(" ")} with ${JSON.stringify(bad)}`;
+      assert.equal(result.status, 1, what);
+      const lines = result.stderr.trim().split("\n");
+      assert.equal(lines.length, 1, `${what}: one line, got:\n${result.stderr}`);
+      assert.match(lines[0], /^searchd: "platform" in .*app\.json must be iphone, ipad, mac \(got .*\)\. Fix it, or run \/searchd-setup again/, what);
+      assert.doesNotMatch(result.stderr, /\bat .*\.js:\d+|Error:/, `${what}: no stack trace`);
+      assert.ok(!/\u001b/.test(result.stderr), `${what}: control codes are stripped`);
+      assert.equal(result.stdout, "", `${what}: nothing else ran`);
+    }
+  }
+  assert.ok(!existsSync(join(process.env.SEARCHD_DIR, "cache")), "no search was even attempted");
+});
+
+test("platform null in app.json still means iPhone (not an error)", () => {
+  setupWorld();
+  writeJson("app.json", { ...readJson("app.json"), platform: null });
+  const result = run(find, ["check"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readJson("results.json").entries["planner|us"].rank, 2);
+});

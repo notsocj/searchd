@@ -235,3 +235,20 @@ test("resolve --platform searches that platform's store (its own cache key); a b
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /--platform must be iphone, ipad, mac/);
 });
+
+test("save after a bad hand-edited platform: without \"platform\" it's one clear line; with one it's fixed", () => {
+  seed("lookup", "1", "us", [store(1, "Me")], "ipad");
+  writeJson("app.json", { id: 1, name: "Me", platform: "android", countries: ["us"], competitors: [] });
+  writeJson("results.json", { entries: { "planner|us": { rank: 4 } } });
+
+  const refused = save({ appId: 1, countries: ["us"] });
+  assert.equal(refused.status, 1);
+  assert.deepEqual(refused.stderr.trim().split("\n"), ['setup.js: the saved platform "android" isn\'t valid. Send "platform" (iphone, ipad, mac) with the save.']);
+  assert.equal(readJson("app.json").platform, "android", "nothing saved");
+
+  const fixed = save({ appId: 1, platform: "ipad", countries: ["us"] });
+  assert.equal(fixed.status, 0, fixed.stderr);
+  assert.match(fixed.stdout, /Switched from android to iPad/, "results of unknown origin are archived");
+  assert.equal(readJson("app.json").platform, "ipad");
+  assert.ok(!existsSync(dir("results.json")));
+});
