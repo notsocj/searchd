@@ -319,6 +319,16 @@ If most of the top 50 apps put a phrase in their name, many developers decided i
 
 Text is compared after cleaning: lowercase, Unicode-normalized (full-width "Ａ" = "A"), punctuation and symbols removed ("Lose It! – Calorie Counter™" = "lose it calorie counter"). Words must match whole ("cal" doesn't match "calorie"), except in Japanese, Chinese, Korean, and Thai, which don't put spaces between words.
 
+Simple English plurals count as the same word, so "Calories Counter" counts fully for "calorie counter". The rule is small on purpose, not a full stemmer:
+
+| Plural | Example |
+|---|---|
+| + s | calorie → calories, app → apps, day → days |
+| + es after s, x, z, ch, sh | box → boxes, glass → glasses, watch → watches |
+| y → ies after a consonant | diary → diaries, story → stories |
+
+The singular needs 3+ letters (so "has" isn't "ha" and the French "les" isn't "le"), nothing is added after a word that already ends in "s" ("glass" isn't the plural of "glas"), and "news" is never "new". It applies to languages that put spaces between words; Japanese, Chinese, Korean, and Thai keep the plain substring match. The audit's "already in the name or subtitle" check still wants the exact word.
+
 ### Difficulty (0–100)
 
 Rating counts are the best public sign of how big an app is. Each top-10 app gets a size score on a **log scale**:
@@ -426,7 +436,7 @@ In `find.js keywords`, `"status": "tracked"` tracks a keyword and `"remove": tru
 - **Volume is a proxy, not real search data.** It measures how much developers *target* a phrase, which tracks demand but isn't a count of searches. Use it to compare keywords, not to forecast downloads.
 - **The API's order can differ slightly from the App Store app.** The iTunes Search API is close to, but not exactly, what people see on their phones (which also personalizes results). Treat ranks as a good approximation and watch the trend.
 - **Only the top 200.** Below that, every app is "200+".
-- **Word matching is simple.** Plurals ("calorie" vs "calories") count as different words, and symbols are dropped ("c++" is read as "c").
+- **Word matching is simple.** Only regular plurals are merged ("calorie"/"calories", "diary"/"diaries", "box"/"boxes"). Irregular ones ("child"/"children", "leaf"/"leaves", "potato"/"potatoes", "quiz"/"quizzes"), other languages' plural forms (French "jeu"/"jeux"), and 2-letter words ("ad"/"ads") still count as different words. Symbols are dropped ("c++" is read as "c").
 - **Difficulty only sees ratings**, not app age, update frequency, or conversion rate.
 - **Translations are your agent's.** No translation API checks them.
 - **iPhone apps only** for now (`entity=software`).

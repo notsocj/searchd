@@ -55,7 +55,7 @@ test("checkListing: missing or wrong-typed fields are listed together", () => {
 test("checkListing: a word in the name or subtitle can't be repeated in the keyword field", () => {
   assert.ok(checkListing({ ...en, keywords: "calorie,diet" }).some((p) => p.includes('"calorie" is already in the name')));
   assert.ok(checkListing({ ...en, keywords: "MACRO" }).some((p) => p.includes("already in the name or subtitle")), "case doesn't matter");
-  assert.deepEqual(checkListing({ ...en, keywords: "calories" }), [], "a different word form is a different word");
+  assert.deepEqual(checkListing({ ...en, keywords: "calories" }), [], "exact words only here: scoring merges plurals, this hard check does not");
 });
 
 test("checkListing: keyword field comma rules", () => {

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  normalize, hasPhrase, hasAllWords, sameLettersDifferentSpacing, rankOf, targetWeight, sizeScore, volumeScore, difficultyScore, opportunityScore, isSweetSpot,
+  normalize, hasPhrase, hasAllWords, isPluralOf, sameWord, sameLettersDifferentSpacing, rankOf, targetWeight, sizeScore, volumeScore, difficultyScore, opportunityScore, isSweetSpot,
 } from "../skills/searchd-find/scripts/lib/score.js";
 
 const app = (name, ratings = 0, description = "") => ({ id: Math.random(), name, ratings, description });
@@ -106,7 +106,76 @@ test("hasPhrase / hasAllWords: empty phrases never match", () => {
 
 test("hasAllWords: any order, but every word must be a whole word", () => {
   assert.ok(hasAllWords("counter of calorie", "calorie counter"));
-  assert.ok(!hasAllWords("calories counter", "calorie counter"), "plurals are different words");
+  assert.ok(!hasAllWords("calorie count", "calorie counter"), "a shorter word is a different word");
+  assert.ok(hasAllWords("counters of calories", "calorie counter"), "plurals count, in any order");
+});
+
+// ---- Plurals ----
+
+test("isPluralOf: the three suffix rules (+s, +es after s/x/z/ch/sh, consonant+y → ies)", () => {
+  for (const [plural, singular] of [
+    ["calories", "calorie"], ["apps", "app"], ["maps", "map"], ["days", "day"], ["movies", "movie"], ["cafés", "café"],
+    ["boxes", "box"], ["glasses", "glass"], ["watches", "watch"], ["dishes", "dish"], ["buses", "bus"], ["quizes", "quiz"],
+    ["diaries", "diary"], ["stories", "story"], ["families", "family"],
+  ]) {
+    assert.ok(isPluralOf(plural, singular), `${plural} is the plural of ${singular}`);
+    assert.ok(!isPluralOf(singular, plural), `${singular} is not the plural of ${plural}`);
+  }
+});
+
+test("isPluralOf: conservative on purpose: no false merges", () => {
+  assert.ok(!isPluralOf("news", "new"), "news isn't new + s");
+  assert.ok(!isPluralOf("glass", "glas"), "nothing after a word that already ends in s");
+  assert.ok(!isPluralOf("fitness", "fitnes"));
+  assert.ok(!isPluralOf("has", "ha"), "the singular needs 3+ letters");
+  assert.ok(!isPluralOf("les", "le"), "French/Spanish articles don't merge");
+  assert.ok(!isPluralOf("los", "lo"));
+  assert.ok(!isPluralOf("dies", "dy"), "y → ies needs a 3+ letter singular too");
+  assert.ok(!isPluralOf("daies", "day"), "a vowel before y takes plain + s");
+  assert.ok(!isPluralOf("gameses", "game"), "only one suffix");
+  assert.ok(!isPluralOf("caloriesx", "calorie"));
+  assert.ok(!isPluralOf("taxes", "taxi"), "no other spelling changes");
+});
+
+test("sameWord: either direction, or equal", () => {
+  assert.ok(sameWord("diary", "diaries"));
+  assert.ok(sameWord("diaries", "diary"));
+  assert.ok(sameWord("box", "box"));
+  assert.ok(!sameWord("new", "news"));
+  assert.ok(!sameWord("cal", "calorie"));
+});
+
+test("hasPhrase: plurals match in either direction, word by word, but stay whole words", () => {
+  assert.ok(hasPhrase("best calories counter", "calorie counter"));
+  assert.ok(hasPhrase("food diary", "food diaries"), "the phrase can be the plural");
+  assert.ok(hasPhrase("lunch boxes for kids", "lunch box"));
+  assert.ok(hasPhrase("calories counters", "calorie counter"), "every word may differ");
+  assert.ok(!hasPhrase("calories app counter", "calorie counter"), "still consecutive words");
+  assert.ok(!hasPhrase("daily news", "daily new"), "news is not new");
+  assert.ok(!hasPhrase("new app", "news app"));
+  assert.ok(!hasPhrase("calorie counter", "cal"), "still whole words only");
+});
+
+test("hasPhrase: { plurals: false } asks for the exact words", () => {
+  assert.ok(!hasPhrase("calories counter", "calorie counter", { plurals: false }));
+  assert.ok(hasPhrase("calorie counter", "calorie counter", { plurals: false }));
+});
+
+test("hasPhrase: Japanese/Chinese/Korean/Thai matching is unchanged (substrings, no plural rule)", () => {
+  assert.ok(hasPhrase("カロリー計算アプリ", "カロリー計算"));
+  assert.ok(!hasPhrase("カロリー計算", "カロリー計算s"));
+  assert.ok(hasPhrase("日记s", "日记"), "substring, exactly as before");
+  assert.ok(!hasPhrase("가계부", "가계부들"));
+});
+
+test("targetWeight and volume: plurals count like the singular", () => {
+  assert.equal(targetWeight(app("Calories Counter"), "calorie counter"), 1);
+  assert.equal(targetWeight(app("Food Diaries"), "food diary"), 1);
+  assert.equal(targetWeight(app("Counter of Calories"), "calorie counter"), 0.6);
+  assert.equal(targetWeight(app("Yazio", 0, "count your calories with our counter"), "calorie counter"), 0.25);
+  assert.equal(targetWeight(app("News App"), "new app"), 0, "news stays news");
+  const mixed = [...Array.from({ length: 25 }, () => app("Calorie Counter")), ...Array.from({ length: 25 }, () => app("Calories Counter"))];
+  assert.equal(volumeScore(mixed, "calorie counter"), 100);
 });
 
 test("sameLettersDifferentSpacing needs 6+ letters", () => {
