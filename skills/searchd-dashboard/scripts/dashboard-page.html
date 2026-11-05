@@ -33,6 +33,7 @@
     --low: #9ba1ae; --low-soft: rgba(155, 161, 174, 0.10);
     --hard: #ff8a4c; --up: #1fc27d; --down: #ff6b6b;
     --radius: 12px; --radius-sm: 8px;
+    --shade: rgba(255, 255, 255, 0.10);
     color-scheme: dark;
   }
   /* Light: when the system is light (unless the user picked dark), or when the user picked light. */
@@ -46,6 +47,7 @@
       --mid: #2f6fe0; --mid-soft: rgba(47, 111, 224, 0.09);
       --low: #6b7180; --low-soft: rgba(107, 113, 128, 0.09);
       --hard: #d9622b; --up: #0e9a5f; --down: #d64545;
+      --shade: rgba(20, 23, 29, 0.14);
       color-scheme: light;
     }
   }
@@ -58,6 +60,7 @@
     --mid: #2f6fe0; --mid-soft: rgba(47, 111, 224, 0.09);
     --low: #6b7180; --low-soft: rgba(107, 113, 128, 0.09);
     --hard: #d9622b; --up: #0e9a5f; --down: #d64545;
+    --shade: rgba(20, 23, 29, 0.14);
     color-scheme: light;
   }
 
@@ -229,7 +232,7 @@
   .chart .foot b { color: var(--text); font-weight: 600; }
   /* Release markers on the charts, and the release list above them */
   .chart .rel line { stroke: var(--gold); stroke-width: 1; stroke-dasharray: 2 3; }
-  .chart .rel text { fill: var(--gold); font-size: 9px; font-weight: 600; font-family: inherit; }
+  .chart .rel text { fill: var(--gold); font-size: 9px; font-weight: 600; font-family: inherit; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
   /* A competitor's change: blue, so it never reads as one of your own releases */
   .chart .rel.comp line { stroke: var(--mid); }
   .chart .rel.comp text { fill: var(--mid); }
@@ -325,6 +328,23 @@
     .toolbar .hint { white-space: nowrap; }
     .stats { grid-template-columns: 1fr; gap: 8px; }
     .stat { display: flex; align-items: baseline; justify-content: space-between; }
+    /* Wide tables (Keywords, Ideas, Head to head) scroll sideways on a phone. Keep the first column,
+       the keyword, pinned while they do (the Board already works this way), so you always know
+       which row you're reading. Its right border separates it from the cells sliding under it. */
+    .scroll td:first-child, .scroll th:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); box-shadow: 1px 0 0 var(--line); }
+    tr.sweet td:first-child { box-shadow: inset 3px 0 0 var(--gold), 1px 0 0 var(--line); }
+    /* Fade the right edge while there's more to scroll to: the shade is fixed to the box's edge
+       ("scroll"), and a panel-colored cover rides at the very end of the content ("local"), so it
+       slides over the shade once you reach the end. A cut-off bar no longer looks broken. */
+    .scroll {
+      background:
+        linear-gradient(to left, var(--panel) 45%, transparent) right / 32px 100% no-repeat local,
+        radial-gradient(farthest-side at 100% 50%, var(--shade), transparent) right / 16px 100% no-repeat scroll,
+        var(--panel);
+    }
+    /* Slimmer score bars: the number carries the value, the bar is a quick visual. */
+    .score { min-width: 84px; gap: 6px; }
+    .bar { min-width: 32px; }
   }
 </style>
 </head>
@@ -671,7 +691,11 @@ function rankChart(points) {
     const g = svg("g", { class: m.cls });
     g.append(svg("title", {}, m.title), svg("line", { x1: at, x2: at, y1: T, y2: H - B }));
     // Competitor labels sit one line lower, so they don't collide with yours on the same day.
-    if (m.label) g.append(svg("text", { x: at + 3, y: T + (m.cls === "rel" ? 7 : 17) }, m.label));
+    // A label goes to the right of its marker, but on the chart's right half it flips to the
+    // left: a competitor's name next to today's date used to run off the chart. Either side
+    // leaves 115+ units, enough for the longest label (shortName keeps names to 14 letters).
+    const flip = at > (L + W - R) / 2;
+    if (m.label) g.append(svg("text", { x: flip ? at - 3 : at + 3, y: T + (m.cls === "rel" ? 7 : 17), "text-anchor": flip ? "end" : "start" }, m.label));
     s.append(g);
   }
   // Break the line where the app wasn't ranked (200+), so a gap reads as "not found", not a drop to 201.
@@ -716,7 +740,12 @@ function sinceRelease(k) {
 
 const competitorName = (id) => (D.app.competitors.find((c) => c.id === id) || {}).name || "A competitor";
 /** "Formula 1®: Live F1 Timing" → "Formula 1®", short enough for a chart label. */
-const shortName = (name) => name.split(/[:\-–|]/)[0].trim().slice(0, 14);
+// The part before ":", "-" or "|" ("Daybook" from "Daybook: Planner & Journal"), at most 14
+// characters. A longer one ends in "…", so "Daybook Planner" reads as shortened, not misspelled.
+const shortName = (name) => {
+  const short = name.split(/[:\-–|]/)[0].trim();
+  return short.length > 14 ? short.slice(0, 13).trimEnd() + "…" : short;
+};
 const dateLabel = (date) => new Date(date + "T00:00").toLocaleDateString(undefined, { dateStyle: "medium" });
 
 /** What a competitor changed, in words: "renamed “F1 TV” → “F1 TV: Live Timing”, new version 4.2". */

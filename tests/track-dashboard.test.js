@@ -289,3 +289,34 @@ test("dashboard page: the platform pill sits next to both app names and is fille
   assert.match(page, /Object\.hasOwn\(PLATFORM_NAMES, platformKey\)/, "an unknown value shows no pill, not raw text");
   assert.doesNotMatch(page, /\.(innerHTML|outerHTML)\b|insertAdjacentHTML/, "the page never inserts HTML");
 });
+
+test("dashboard page: chart marker labels flip left on the right half, and have an outline", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../skills/searchd-dashboard/scripts/dashboard-page.html", import.meta.url), "utf8");
+  // A competitor's name next to today's date used to run off the chart's right edge.
+  assert.match(page, /const flip = at > \(L \+ W - R\) \/ 2;/);
+  assert.match(page, /x: flip \? at - 3 : at \+ 3,.*"text-anchor": flip \? "end" : "start"/);
+  assert.match(page, /\.chart \.rel text \{[^}]*paint-order: stroke; stroke: var\(--panel\)/, "readable where it crosses the rank line");
+});
+
+test("dashboard page: shortName cuts long competitor names with an ellipsis, never mid-word silently", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../skills/searchd-dashboard/scripts/dashboard-page.html", import.meta.url), "utf8");
+  // Run the page's own shortName (pure, no DOM) so the test checks the real code.
+  const source = page.match(/const shortName = \(name\) => \{[\s\S]*?\n\};/)[0];
+  const shortName = new Function(`${source}; return shortName;`)();
+  assert.equal(shortName("Daybook: Planner & Journal"), "Daybook");
+  assert.equal(shortName("Daybook Planner"), "Daybook Plann…");
+  assert.equal(shortName("Daybook Planner").length, 14, "still at most 14 characters");
+  assert.equal(shortName("Exactly14Chars"), "Exactly14Chars", "14 fits as is");
+  assert.equal(shortName("Focus – Timer"), "Focus");
+});
+
+test("dashboard page: on a phone, wide tables pin their first column and fade the right edge", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../skills/searchd-dashboard/scripts/dashboard-page.html", import.meta.url), "utf8");
+  const phone = page.slice(page.indexOf("@media (max-width: 640px)"));
+  assert.match(phone, /\.scroll td:first-child, \.scroll th:first-child \{ position: sticky; left: 0;/);
+  assert.match(phone, /no-repeat local,[\s\S]*var\(--shade\)[\s\S]*no-repeat scroll/, "scroll-edge shade");
+  assert.equal((page.match(/--shade:/g) || []).length, 3, "the shade token is set for dark, system-light and picked-light");
+});
